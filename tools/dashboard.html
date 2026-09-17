@@ -54,6 +54,8 @@
   .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px;
            background: #eef0f3; color: #555; }
   .badge.count { background: #1a1a1a; color: #fff; font-weight: 600; }
+  .badge.new { background: #2c7a4b; color: #fff; font-weight: 600; }
+  .badge.fixed { background: #6b7280; color: #fff; font-weight: 600; }
   .group .items { margin-top: 8px; max-height: 260px; overflow: auto; }
   .group-item { font-family: ui-monospace, monospace; font-size: 12px;
                 background: #f4f5f7; padding: 4px 8px; border-radius: 4px;
@@ -61,6 +63,13 @@
   .group-item .loc { color: #666; }
   .group-item .ttl { color: #333; }
   .empty { text-align: center; color: #888; padding: 40px; }
+  .diff-section { margin-bottom: 24px; }
+  .diff-section h2 { font-size: 15px; margin: 0 0 10px;
+                     border-bottom: 1px solid #e3e6ea; padding-bottom: 6px; }
+  .diff-section h2 .cnt { color: #888; font-weight: 400; margin-left: 6px; }
+  .diff-section.fixed .finding h3 { text-decoration: line-through;
+                                     text-decoration-color: #aaa; }
+  .diff-details { margin-bottom: 12px; font-size: 12px; color: #666; }
 </style>
 </head>
 <body>
@@ -75,7 +84,7 @@
 
 <script>
 /*STATE-BEGIN*/
-window.STATE = { run: {}, summary: { severities: {}, categories: {} }, findings: [], groups: [] };
+window.STATE = { run: {}, summary: { severities: {}, categories: {} }, findings: [], groups: [], diff: null };
 /*STATE-END*/
 
 const SEV_ORDER = ["critical", "high", "medium", "low"];
@@ -84,7 +93,7 @@ const CAT_LABEL = { bug: "Баг", vuln: "Уязвимость",
 const SEV_LABEL = { critical: "Критично", high: "Высоко",
                     medium: "Средне", low: "Низко" };
 
-let view = "findings";   // findings | groups
+let view = "findings";   // findings | groups | diff
 let filter = { severity: null, category: null };
 
 function esc(s) {
@@ -105,21 +114,23 @@ function render() {
       <div class="label">${SEV_LABEL[k]}</div>
     </div>`).join("");
 
-  // --- view toggle ---
   const vt = document.getElementById("view-toggle");
   const nF = s.findings.length;
   const nG = (s.groups || []).length;
+  const hasDiff = !!s.diff;
+  const diffCnt = hasDiff ? ` (${s.diff.summary.new}+${s.diff.summary.fixed})` : "";
   vt.innerHTML =
     `<span class="filter ${view === "findings" ? "active" : ""}"
            data-view="findings">По находкам (${nF})</span>` +
     `<span class="filter ${view === "groups" ? "active" : ""}"
-           data-view="groups">По кодам (${nG})</span>`;
+           data-view="groups">По кодам (${nG})</span>` +
+    (hasDiff ? `<span class="filter ${view === "diff" ? "active" : ""}"
+           data-view="diff">Diff${diffCnt}</span>` : "");
   vt.querySelectorAll(".filter").forEach(el => el.addEventListener("click", () => {
     view = el.dataset.view;
     render();
   }));
 
-  // --- category/severity filters ---
   const cats = s.summary.categories || {};
   const f = document.getElementById("filters");
   f.innerHTML =
@@ -142,6 +153,7 @@ function render() {
 
   const list = document.getElementById("list");
   if (view === "groups") renderGroups(list);
+  else if (view === "diff") renderDiff(list);
   else renderFindings(list);
 }
 
@@ -153,7 +165,11 @@ function applyFilters(items) {
 }
 
 function badgesFor(x, extra) {
+  const ds = x.diff_status;
+  const dsBadge = ds === "new"   ? `<span class="badge new">NEW</span>` :
+                  ds === "fixed" ? `<span class="badge fixed">FIXED</span>` : "";
   return [
+    dsBadge,
     `<span class="badge">${CAT_LABEL[x.category] || x.category}</span>`,
     `<span class="badge">${esc(x.detector)}</span>`,
     x.risk   ? `<span class="badge">риск: ${esc(x.risk)}</span>` : "",
@@ -162,24 +178,26 @@ function badgesFor(x, extra) {
   ].filter(Boolean).join("");
 }
 
+function findingCard(x) {
+  const prop = x.proposal
+    ? `<div class="proposal"><strong>Что сделать:</strong> ${esc(x.proposal)}</div>`
+    : `<div class="proposal missing">Предложение ещё не сформулировано.</div>`;
+  return `<div class="finding" data-sev="${esc(x.severity)}">
+    <h3>${esc(x.title)}</h3>
+    <div class="where">${esc(x.file)}${x.line ? ":" + x.line : ""}</div>
+    ${x.evidence ? `<div class="evidence">${esc(x.evidence)}</div>` : ""}
+    ${prop}
+    <div class="badges">${badgesFor(x)}</div>
+  </div>`;
+}
+
 function renderFindings(list) {
   const items = applyFilters(window.STATE.findings);
   if (!items.length) {
     list.innerHTML = `<div class="empty">Ничего не найдено.</div>`;
     return;
   }
-  list.innerHTML = items.map(x => {
-    const prop = x.proposal
-      ? `<div class="proposal"><strong>Что сделать:</strong> ${esc(x.proposal)}</div>`
-      : `<div class="proposal missing">Предложение ещё не сформулировано.</div>`;
-    return `<div class="finding" data-sev="${esc(x.severity)}">
-      <h3>${esc(x.title)}</h3>
-      <div class="where">${esc(x.file)}${x.line ? ":" + x.line : ""}</div>
-      ${x.evidence ? `<div class="evidence">${esc(x.evidence)}</div>` : ""}
-      ${prop}
-      <div class="badges">${badgesFor(x)}</div>
-    </div>`;
-  }).join("");
+  list.innerHTML = items.map(findingCard).join("");
 }
 
 function renderGroups(list) {
@@ -202,6 +220,49 @@ function renderGroups(list) {
       <div class="badges">${badgesFor(g, [`<span class="badge count">×${g.count}</span>`])}</div>
     </div>`;
   }).join("");
+}
+
+function renderDiff(list) {
+  const d = window.STATE.diff;
+  if (!d) { list.innerHTML = `<div class="empty">Diff недоступен.</div>`; return; }
+
+  const newIds = new Set(d.new_ids || []);
+  const sameIds = new Set(d.same_ids || []);
+  const newFindings = (window.STATE.findings || []).filter(f => newIds.has(f.id));
+  const sameFindings = (window.STATE.findings || []).filter(f => sameIds.has(f.id));
+  const fixedFindings = (d.fixed || []).map(f => ({ ...f, diff_status: "fixed" }));
+
+  const oldName = (d.old_run || "").split(/[\\/]/).pop();
+  const newName = (d.new_run || "").split(/[\\/]/).pop();
+
+  let html = `<div class="diff-details">Сравнение: <b>${esc(oldName)}</b> → <b>${esc(newName)}</b> · было ${d.old_count}, стало ${d.new_count}</div>`;
+
+  const section = (title, cls, items, renderFn) => {
+    if (!items.length) return "";
+    return `<div class="diff-section ${cls}">
+      <h2>${title}<span class="cnt">${items.length}</span></h2>
+      ${items.map(renderFn).join("")}
+    </div>`;
+  };
+
+  html += section("Новые", "new", newFindings, findingCard);
+  html += section("Исчезли", "fixed", fixedFindings, findingCard);
+
+  if (sameFindings.length) {
+    html += `<div class="diff-section same">
+      <h2>Без изменений<span class="cnt">${sameFindings.length}</span></h2>
+      <div class="empty" style="padding:12px;text-align:left;">
+        ${sameFindings.length} находок были и в прошлом прогоне. Переключитесь
+        на «По находкам» или «По кодам», чтобы увидеть их полностью.
+      </div>
+    </div>`;
+  }
+
+  if (!newFindings.length && !fixedFindings.length) {
+    html += `<div class="empty">Между прогонами ничего не изменилось.</div>`;
+  }
+
+  list.innerHTML = html;
 }
 
 render();

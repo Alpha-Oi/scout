@@ -75,6 +75,20 @@ def group_findings(findings, proposals):
     return groups
 
 
+def load_diff(scout_root):
+    """Прочитать diff.json, если он есть рядом со state.js."""
+    path = scout_root / "diff.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not all(k in data for k in ("new_ids", "fixed_ids", "same_ids")):
+        return None
+    return data
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("run_dir", help="Каталог прогона (с findings.json)")
@@ -100,6 +114,16 @@ def main():
         counts[f["severity"]] = counts.get(f["severity"], 0) + 1
         by_cat[f["category"]] = by_cat.get(f["category"], 0) + 1
 
+    diff = load_diff(scout_root)
+    diff_status_by_id = {}
+    if diff:
+        for fid in diff.get("new_ids", []):
+            diff_status_by_id[fid] = "new"
+        for fid in diff.get("fixed_ids", []):
+            diff_status_by_id[fid] = "fixed"
+        for fid in diff.get("same_ids", []):
+            diff_status_by_id[fid] = "same"
+
     state = {
         "run": {
             "started": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -111,10 +135,12 @@ def main():
             {**f,
              "proposal": proposals.get(f["id"], {}).get("proposal"),
              "risk":     proposals.get(f["id"], {}).get("risk"),
-             "effort":   proposals.get(f["id"], {}).get("effort")}
+             "effort":   proposals.get(f["id"], {}).get("effort"),
+             "diff_status": diff_status_by_id.get(f["id"])}
             for f in findings
         ],
         "groups": group_findings(findings, proposals),
+        "diff": diff,
     }
 
     out = scout_root / "state.js"
