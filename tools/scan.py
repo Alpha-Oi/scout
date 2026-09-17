@@ -593,6 +593,224 @@ def detect_ruff(project, log):
     return findings
 
 
+def detect_mypy(project, log):
+    """mypy: статическая проверка типов. Формат --output json (JSON lines)."""
+    base = _tool_cmd("mypy", "mypy")
+    if base is None:
+        log.write("  mypy not installed — skip\n")
+        return []
+    cmd = base + ["-O", "json", "--no-error-summary", "--no-pretty",
+                  "--hide-error-context", str(project)]
+    r = run(cmd, project, log, timeout=240)
+    if r is None or not r.stdout:
+        return []
+    findings = []
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        sev = "high" if item.get("severity") == "error" else "medium"
+        code = item.get("code") or ""
+        msg = (item.get("message") or "").strip()
+        title = f"{code}: {msg[:110]}" if code else msg[:120]
+        findings.append(make_finding(
+            category="bug",
+            severity=sev,
+            title=title,
+            file=_rel(project, item.get("file", "")),
+            line=item.get("line", 0),
+            evidence=f"{code} {msg}".strip(),
+            detector="mypy",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+def detect_pip_outdated(project, log):
+    """pip list --outdated: устаревшие зависимости без CVE."""
+    cmd = [sys.executable, "-m", "pip", "list", "--outdated", "--format", "json"]
+    r = run(cmd, project, log, timeout=120)
+    if r is None or not r.stdout:
+        return []
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+    findings = []
+    for item in data if isinstance(data, list) else []:
+        name = item.get("name", "?")
+        cur = item.get("version", "?")
+        latest = item.get("latest_version", "?")
+        # major bump — выше severity
+        try:
+            cur_major = int(str(cur).split(".")[0])
+            new_major = int(str(latest).split(".")[0])
+            sev = "medium" if new_major > cur_major else "low"
+        except (ValueError, TypeError):
+            sev = "low"
+        findings.append(make_finding(
+            category="improvement",
+            severity=sev,
+            title=f"{name}: {cur} → {latest}",
+            file="requirements.txt",
+            line=0,
+            evidence=f"{name} {cur} -> {latest}",
+            detector="pip-outdated",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+def detect_interrogate(project, log):
+    """interrogate: доля docstrings. Из JSON берём файлы с покрытием < 80%."""
+    base = _tool_cmd("interrogate", "interrogate")
+    if base is None:
+        log.write("  interrogate not installed — skip\n")
+        return []
+    cmd = base + ["--json", "-q", str(project)]
+    r = run(cmd, project, log, timeout=120)
+    if r is None or not r.stdout:
+        return []
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+    findings = []
+    for fname, info in (data.get("files") or {}).items():
+        cov = info.get("total", info.get("coverage", 100))
+        if cov >= 80:
+            continue
+        missing = info.get("missing", info.get("missing_count", 0))
+        findings.append(make_finding(
+            category="improvement",
+            severity="low" if cov >= 50 else "medium",
+            title=f"документации: {cov:.0f}% ({missing} пропущено)",
+            file=_rel(project, fname),
+            line=0,
+            evidence=f"coverage={cov:.1f}% missing={missing}",
+            detector="interrogate",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+def detect_pyscn(project, log):
+    """pyscn: дубли кода (clone detection), Type 1-4."""
+    base = _tool_cmd("pyscn", "pyscn")
+    if base is None:
+        log.write("  pyscn not installed — skip (try: uvx pyscn)\n")
+        return []
+    cmd = base + ["analyze", "--json", "--select", "clones", "--no-open", str(project)]
+    r = run(cmd, project, log, timeout=180)
+    if r is None:
+        return []
+    # pyscn может писать JSON в stdout
+    out = (r.stdout or "").strip()
+    if not out.startswith("{"):
+        log.write("  no json output (pyscn may have written to file)\n")
+        return []
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+    findings = []
+    for clone in (data.get("clones") or data.get("duplicates") or []):
+        sim = clone.get("similarity", 0)
+        sev = "high" if sim >= 0.9 else "medium"
+        locs = clone.get("locations") or clone.get("files") or []
+        first = locs[0] if locs else {}
+        fname = first.get("file") or first.get("filename") or "?"
+        line = first.get("line") or first.get("start_line") or 0
+        findings.append(make_finding(
+            category="improvement",
+            severity=sev,
+            title=f"дубль кода, similarity {sim:.2f}",
+            file=_rel(project, fname),
+            line=line,
+            evidence=f"clone similarity={sim:.2f} locations={len(locs)}",
+            detector="pyscn",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+def detect_semgrep(project, log):
+    """semgrep: SAST с auto-правилами."""
+    base = _tool_cmd("semgrep", "semgrep")
+    if base is None:
+        log.write("  semgrep not installed — skip\n")
+        return []
+    cmd = base + ["scan", "--config", "auto", "--json", "--quiet",
+                  "--no-git-ignore", str(project)]
+    r = run(cmd, project, log, timeout=300)
+    if r is None or not r.stdout:
+        return []
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+    sev_map = {"ERROR": "high", "WARNING": "medium", "INFO": "low"}
+    findings = []
+    for item in (data.get("results") or []):
+        meta = item.get("extra", {}).get("metadata", {}) or {}
+        raw_sev = str(meta.get("severity", item.get("extra", {}).get("severity", "INFO"))).upper()
+        sev = sev_map.get(raw_sev, "low")
+        rule_id = item.get("check_id", "?")
+        msg = (item.get("extra", {}).get("message") or "").strip()
+        findings.append(make_finding(
+            category="vuln",
+            severity=sev,
+            title=f"{rule_id}: {msg[:100]}",
+            file=_rel(project, item.get("path", "")),
+            line=(item.get("start") or {}).get("line", 0),
+            evidence=f"{rule_id} {msg}",
+            detector="semgrep",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+def detect_detect_secrets(project, log):
+    """detect-secrets: секреты с энтропийным анализом (дополняет regex-сканер)."""
+    base = _tool_cmd("detect-secrets", "detect_secrets")
+    if base is None:
+        log.write("  detect-secrets not installed — skip\n")
+        return []
+    cmd = base + ["scan", "--all-files", "--force-use-all-plugins"]
+    r = run(cmd, project, log, timeout=180)
+    if r is None or not r.stdout:
+        return []
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+    findings = []
+    for fname, items in (data.get("results") or {}).items():
+        for it in items or []:
+            line = it.get("line_number", 0)
+            stype = it.get("type", "Secret")
+            findings.append(make_finding(
+                category="vuln",
+                severity="critical" if it.get("is_verified") else "high",
+                title=f"{stype} в {fname}:{line}",
+                file=_rel(project, fname),
+                line=line,
+                evidence=f"{stype} hashed={it.get('hashed_secret', '')[:16]}…",
+                detector="detect-secrets",
+            ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
 def _which(name):
     from shutil import which
     return which(name)
@@ -601,14 +819,20 @@ def _which(name):
 # --- точка входа ------------------------------------------------------------
 
 DETECTORS = [
-    ("pytest-failed", detect_pytest_failed),
-    ("pip-audit",     detect_pip_audit),
-    ("bandit",        detect_bandit),
-    ("ruff",          detect_ruff),
-    ("vulture",       detect_vulture),
-    ("radon",         detect_radon),
-    ("todo-fixme",    detect_todo),
-    ("secrets",       detect_secrets),
+    ("pytest-failed",   detect_pytest_failed),
+    ("pip-audit",       detect_pip_audit),
+    ("pip-outdated",    detect_pip_outdated),
+    ("bandit",          detect_bandit),
+    ("ruff",            detect_ruff),
+    ("mypy",            detect_mypy),
+    ("vulture",         detect_vulture),
+    ("radon",           detect_radon),
+    ("interrogate",     detect_interrogate),
+    ("pyscn",           detect_pyscn),
+    ("semgrep",         detect_semgrep),
+    ("detect-secrets",  detect_detect_secrets),
+    ("todo-fixme",      detect_todo),
+    ("secrets",         detect_secrets),
 ]
 
 

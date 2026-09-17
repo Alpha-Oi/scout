@@ -145,6 +145,74 @@ def propose_ruff(f):
     }
 
 
+def propose_mypy(f):
+    code = (f.get("evidence") or "").split(" ", 1)[0]
+    where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    return {
+        "proposal": (f"Исправить ошибку типа {code} в {where}. "
+                     f"Либо аннотировать правильным типом, либо добавить "
+                     f"# type: ignore с объяснением, если это ложное срабатывание."),
+        "risk": "medium",
+        "effort": "M",
+    }
+
+
+def propose_pip_outdated(f):
+    title = f.get("title", "")
+    return {
+        "proposal": (f"Обновить {title}. Проверить changelog на breaking changes, "
+                     f"прогнать тесты. Для major bump — отдельный PR."),
+        "risk": "low",
+        "effort": "S",
+    }
+
+
+def propose_interrogate(f):
+    where = f.get("file", "?")
+    return {
+        "proposal": (f"Добавить docstrings в {where}: {f.get('title', '')}. "
+                     f"Google-style: Args, Returns, Raises. Для приватных "
+                     f"функций достаточно однострочного описания."),
+        "risk": "low",
+        "effort": "M",
+    }
+
+
+def propose_pyscn(f):
+    where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    return {
+        "proposal": (f"Разобрать дубль кода в {where}. Найти вторую копию "
+                     f"(pyscn analyze --select clones), вынести общую логику "
+                     f"в функцию или модуль, заменить обе копии вызовом."),
+        "risk": "medium",
+        "effort": "M",
+    }
+
+
+def propose_semgrep(f):
+    rule = (f.get("evidence") or "").split(" ", 1)[0]
+    where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    return {
+        "proposal": (f"Разобрать semgrep-правило {rule} в {where}. "
+                     f"Проверить, эксплуатируется ли в проде; если да — "
+                     f"переписать участок по рекомендации из сообщения правила."),
+        "risk": "medium",
+        "effort": "M",
+    }
+
+
+def propose_detect_secrets(f):
+    where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    return {
+        "proposal": (f"Секрет в {where}. Немедленно ротировать значение "
+                     f"у провайдера, перенести в .env, добавить .env в "
+                     f".gitignore. Если значение уже в git-истории — "
+                     f"использовать git filter-repo."),
+        "risk": "high",
+        "effort": "M",
+    }
+
+
 ROUTES = {
     "pip-audit": propose_pip_audit,
     "secrets": propose_secrets,
@@ -154,6 +222,12 @@ ROUTES = {
     "vulture": propose_vulture,
     "radon": propose_radon,
     "ruff": propose_ruff,
+    "mypy": propose_mypy,
+    "pip-outdated": propose_pip_outdated,
+    "interrogate": propose_interrogate,
+    "pyscn": propose_pyscn,
+    "semgrep": propose_semgrep,
+    "detect-secrets": propose_detect_secrets,
 }
 
 
