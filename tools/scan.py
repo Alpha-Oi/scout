@@ -415,6 +415,14 @@ def detect_bandit(project, log):
         sev = sev_map.get((item.get("issue_severity") or "").upper(), "low")
         text = (item.get("issue_text") or "").strip()
         title = text[:120] if text else item.get("test_name", "bandit issue")
+        test_id = item.get("test_id", "")
+        if test_id in ("B105", "B106", "B107"):
+            m = re.search(r"""['"]([^'"]+)['"]""", text)
+            if m:
+                val = m.group(1)
+                if ("/" in val or "\\" in val or val.startswith(".")
+                        or val.endswith((".key", ".pem", ".crt", ".env"))):
+                    continue
         evidence = (
             f"{item.get('test_id', '?')} {item.get('test_name', '')}\n"
             f"{text}"
@@ -518,25 +526,34 @@ RUFF_CATEGORY = {
 
 
 def _ruff_category(code):
-    if code.startswith("S"):
+    # Bandit-derived rules: S101..S799 (S followed by a digit)
+    if len(code) >= 2 and code[0] == "S" and code[1].isdigit():
         return "vuln"
-    if code.startswith("B"):
+    # Pyflakes: undefined names, unused vars
+    if code.startswith("F") and len(code) >= 2 and code[1].isdigit():
         return "bug"
-    if code in ("F821", "F811", "F823", "F822"):
-        return "bug"    # undefined / redefined
+    # Bugbear: dangerous patterns
+    if code.startswith("B") and len(code) >= 2 and code[1].isdigit():
+        return "bug"
+    # SIM, I, E, W, C, N, D, UP — style / simplification
     return "improvement"
 
 
 def _ruff_severity(code):
-    if code.startswith("S"):
+    # Real security issues (bandit rules in ruff)
+    if len(code) >= 2 and code[0] == "S" and code[1].isdigit():
         return "high"
-    if code.startswith("B"):
-        return "medium"
+    # Undefined / redefined names — real bugs
     if code in ("F821", "F811", "F823", "F822"):
         return "high"
-    if code.startswith("F"):
-        return "medium"     # F401 unused import и т.п.
-    return "low"            # E, W, C, N, D, I, UP
+    # Unused variable, blind except, resource leak
+    if code in ("F841", "BLE001", "SIM115"):
+        return "medium"
+    # Bugbear
+    if code.startswith("B") and len(code) >= 2 and code[1].isdigit():
+        return "medium"
+    # Import sort, style
+    return "low"
 
 
 def detect_ruff(project, log):
