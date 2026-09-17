@@ -1,0 +1,14 @@
+---
+description: Scout - scan a project for bugs, vulns, and improvements
+alwaysApply: false
+globs: "**/*"
+---
+
+# Scout
+
+На команду /scout или запрос "просканируй проект" загрузи скилл из
+.cursor/skills/scout/SKILL.md и следуй фазам по порядку.
+
+- Один файл фазы за раз.
+- Runtime - Python-скрипты в tools/, ничего не переписывай.
+- Проект только читается; отчёты идут в ./.scout.
