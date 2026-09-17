@@ -170,11 +170,18 @@ def main():
 
     findings = json.loads(findings_file.read_text(encoding="utf-8"))
 
+    SEV_TO_RISK = {"critical": "high", "high": "high",
+                   "medium": "medium", "low": "low"}
+    RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+
     proposals = []
     for f in findings:
         detector = f.get("detector", "")
         fn = ROUTES.get(detector, propose_default)
         prop = fn(f) or propose_default(f)
+        sev_risk = SEV_TO_RISK.get(f.get("severity", "low"), "low")
+        if RISK_ORDER[sev_risk] > RISK_ORDER.get(prop["risk"], 0):
+            prop["risk"] = sev_risk
         proposals.append({
             "id": f["id"],
             "proposal": prop["proposal"],

@@ -2,8 +2,77 @@
 """Собрать state.js из findings.json (+ proposals.json, если есть)."""
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _extract_code(detector, f):
+    """Ключ группы: обычно код правила (I001, F841, SIM115, PYSEC-...)."""
+    title = (f.get("title") or "").strip()
+    if detector == "ruff" and ":" in title:
+        return title.split(":", 1)[0].strip()
+    if detector == "bandit":
+        ev = (f.get("evidence") or "").split("\n", 1)[0]
+        return (ev.split(" ", 1)[0].strip() if ev else "bandit")
+    if detector == "radon":
+        m = re.search(r"\(([A-F])\)\s*$", title)
+        return "radon:" + (m.group(1) if m else "?")
+    if detector == "pip-audit":
+        m = re.search(r"\(([A-Z]+-\d{4}-\d+)\)", title)
+        return "pip-audit:" + (m.group(1) if m else "?")
+    return detector
+
+
+SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
+def group_findings(findings, proposals):
+    """Собрать группы по (detector, code). Внутри группы — находки, отсортированные."""
+    buckets = {}
+    for f in findings:
+        key = f.get("detector", "?") + ":" + _extract_code(f.get("detector", ""), f)
+        buckets.setdefault(key, []).append(f)
+
+    groups = []
+    for key, items in buckets.items():
+        items_sorted = sorted(items, key=lambda x: (
+            SEV_ORDER.get(x.get("severity", "low"), 9),
+            x.get("file", ""),
+            x.get("line", 0),
+        ))
+        worst = items_sorted[0]
+        # proposal от первой находки в группе — предполагаем, что он одинаков
+        prop = proposals.get(worst["id"], {})
+        groups.append({
+            "key": key,
+            "detector": worst.get("detector", "?"),
+            "code": _extract_code(worst.get("detector", ""), worst),
+            "title": worst.get("title", ""),
+            "category": worst.get("category", "?"),
+            "severity": worst.get("severity", "low"),
+            "count": len(items),
+            "proposal": prop.get("proposal"),
+            "risk": prop.get("risk"),
+            "effort": prop.get("effort"),
+            "items": [
+                {
+                    "id": x["id"],
+                    "file": x.get("file", ""),
+                    "line": x.get("line", 0),
+                    "title": x.get("title", ""),
+                }
+                for x in items_sorted
+            ],
+        })
+
+    # Сортировка групп: severity → count desc → key
+    groups.sort(key=lambda g: (
+        SEV_ORDER.get(g["severity"], 9),
+        -g["count"],
+        g["key"],
+    ))
+    return groups
 
 
 def main():
@@ -45,6 +114,7 @@ def main():
              "effort":   proposals.get(f["id"], {}).get("effort")}
             for f in findings
         ],
+        "groups": group_findings(findings, proposals),
     }
 
     out = scout_root / "state.js"

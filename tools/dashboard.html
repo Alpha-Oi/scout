@@ -10,10 +10,11 @@
          margin: 0; padding: 24px; background: #f7f8fa; color: #1a1a1a; }
   @media (prefers-color-scheme: dark) {
     body { background: #14161a; color: #e6e6e6; }
-    .card, .finding { background: #1d2027 !important; border-color: #2a2e37 !important; }
+    .card, .finding, .group { background: #1d2027 !important; border-color: #2a2e37 !important; }
     .evidence { background: #22262e !important; color: #cfcfcf !important; }
     .proposal { background: #1f3a2a !important; }
     .proposal.missing { background: #22262e !important; }
+    .group-item { background: #22262e !important; }
   }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .meta { color: #888; font-size: 12px; margin-bottom: 20px; word-break: break-all; }
@@ -26,29 +27,39 @@
   .sev-high .num     { color: #e67e22; }
   .sev-medium .num   { color: #d4a017; }
   .sev-low .num      { color: #2c7a4b; }
-  .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .filters.view { margin-bottom: 16px; padding-bottom: 16px;
+                  border-bottom: 1px solid #e3e6ea; }
   .filter { padding: 6px 12px; border: 1px solid #d0d4d9; border-radius: 999px;
             background: #fff; cursor: pointer; font-size: 12px; user-select: none; }
   .filter.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
-  .finding { background: #fff; border: 1px solid #e3e6ea; border-left: 3px solid #ccc;
+  .finding, .group { background: #fff; border: 1px solid #e3e6ea; border-left: 3px solid #ccc;
              border-radius: 6px; padding: 14px 16px; margin-bottom: 10px; }
-  .finding[data-sev="critical"] { border-left-color: #c0392b; }
-  .finding[data-sev="high"]     { border-left-color: #e67e22; }
-  .finding[data-sev="medium"]   { border-left-color: #d4a017; }
-  .finding[data-sev="low"]      { border-left-color: #2c7a4b; }
-  .finding h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+  .finding[data-sev="critical"], .group[data-sev="critical"] { border-left-color: #c0392b; }
+  .finding[data-sev="high"],     .group[data-sev="high"]     { border-left-color: #e67e22; }
+  .finding[data-sev="medium"],   .group[data-sev="medium"]   { border-left-color: #d4a017; }
+  .finding[data-sev="low"],      .group[data-sev="low"]      { border-left-color: #2c7a4b; }
+  .finding h3, .group h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
   .finding .where { font-family: ui-monospace, "SF Mono", Consolas, monospace;
                     font-size: 12px; color: #666; }
   .finding .evidence { margin-top: 8px; font-family: ui-monospace, monospace;
                        font-size: 12px; background: #f4f5f7; padding: 8px 10px;
                        border-radius: 4px; white-space: pre-wrap; color: #444;
                        max-height: 140px; overflow: auto; }
-  .finding .proposal { margin-top: 8px; padding: 8px 10px; background: #eaf5ee;
-                       border-radius: 4px; font-size: 13px; }
-  .finding .proposal.missing { background: #f4f5f7; color: #888; font-style: italic; }
+  .finding .proposal, .group .proposal { margin-top: 8px; padding: 8px 10px;
+                       background: #eaf5ee; border-radius: 4px; font-size: 13px; }
+  .finding .proposal.missing, .group .proposal.missing {
+                       background: #f4f5f7; color: #888; font-style: italic; }
   .badges { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
   .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px;
            background: #eef0f3; color: #555; }
+  .badge.count { background: #1a1a1a; color: #fff; font-weight: 600; }
+  .group .items { margin-top: 8px; max-height: 260px; overflow: auto; }
+  .group-item { font-family: ui-monospace, monospace; font-size: 12px;
+                background: #f4f5f7; padding: 4px 8px; border-radius: 4px;
+                margin-bottom: 4px; color: #444; }
+  .group-item .loc { color: #666; }
+  .group-item .ttl { color: #333; }
   .empty { text-align: center; color: #888; padding: 40px; }
 </style>
 </head>
@@ -57,12 +68,14 @@
   <div class="meta" id="meta"></div>
 
   <div class="summary" id="summary"></div>
+
+  <div class="filters view" id="view-toggle"></div>
   <div class="filters" id="filters"></div>
   <div id="list"></div>
 
 <script>
 /*STATE-BEGIN*/
-window.STATE = { run: {}, summary: { severities: {}, categories: {} }, findings: [] };
+window.STATE = { run: {}, summary: { severities: {}, categories: {} }, findings: [], groups: [] };
 /*STATE-END*/
 
 const SEV_ORDER = ["critical", "high", "medium", "low"];
@@ -71,6 +84,7 @@ const CAT_LABEL = { bug: "Баг", vuln: "Уязвимость",
 const SEV_LABEL = { critical: "Критично", high: "Высоко",
                     medium: "Средне", low: "Низко" };
 
+let view = "findings";   // findings | groups
 let filter = { severity: null, category: null };
 
 function esc(s) {
@@ -91,11 +105,26 @@ function render() {
       <div class="label">${SEV_LABEL[k]}</div>
     </div>`).join("");
 
+  // --- view toggle ---
+  const vt = document.getElementById("view-toggle");
+  const nF = s.findings.length;
+  const nG = (s.groups || []).length;
+  vt.innerHTML =
+    `<span class="filter ${view === "findings" ? "active" : ""}"
+           data-view="findings">По находкам (${nF})</span>` +
+    `<span class="filter ${view === "groups" ? "active" : ""}"
+           data-view="groups">По кодам (${nG})</span>`;
+  vt.querySelectorAll(".filter").forEach(el => el.addEventListener("click", () => {
+    view = el.dataset.view;
+    render();
+  }));
+
+  // --- category/severity filters ---
   const cats = s.summary.categories || {};
   const f = document.getElementById("filters");
   f.innerHTML =
     `<span class="filter ${!filter.severity && !filter.category ? "active" : ""}"
-           data-kind="all">Все (${s.findings.length})</span>` +
+           data-kind="all">Все (${nF})</span>` +
     SEV_ORDER.filter(k => sev[k]).map(k =>
       `<span class="filter ${filter.severity === k ? "active" : ""}"
              data-kind="severity" data-val="${k}">${SEV_LABEL[k]} (${sev[k]})</span>`).join("") +
@@ -111,11 +140,30 @@ function render() {
     render();
   }));
 
-  let items = s.findings;
-  if (filter.severity) items = items.filter(x => x.severity === filter.severity);
-  if (filter.category) items = items.filter(x => x.category === filter.category);
-
   const list = document.getElementById("list");
+  if (view === "groups") renderGroups(list);
+  else renderFindings(list);
+}
+
+function applyFilters(items) {
+  let out = items;
+  if (filter.severity) out = out.filter(x => x.severity === filter.severity);
+  if (filter.category) out = out.filter(x => x.category === filter.category);
+  return out;
+}
+
+function badgesFor(x, extra) {
+  return [
+    `<span class="badge">${CAT_LABEL[x.category] || x.category}</span>`,
+    `<span class="badge">${esc(x.detector)}</span>`,
+    x.risk   ? `<span class="badge">риск: ${esc(x.risk)}</span>` : "",
+    x.effort ? `<span class="badge">усилие: ${esc(x.effort)}</span>` : "",
+    ...(extra || []),
+  ].filter(Boolean).join("");
+}
+
+function renderFindings(list) {
+  const items = applyFilters(window.STATE.findings);
   if (!items.length) {
     list.innerHTML = `<div class="empty">Ничего не найдено.</div>`;
     return;
@@ -124,18 +172,34 @@ function render() {
     const prop = x.proposal
       ? `<div class="proposal"><strong>Что сделать:</strong> ${esc(x.proposal)}</div>`
       : `<div class="proposal missing">Предложение ещё не сформулировано.</div>`;
-    const badges = [
-      `<span class="badge">${CAT_LABEL[x.category] || x.category}</span>`,
-      `<span class="badge">${esc(x.detector)}</span>`,
-      x.risk   ? `<span class="badge">риск: ${esc(x.risk)}</span>` : "",
-      x.effort ? `<span class="badge">усилие: ${esc(x.effort)}</span>` : "",
-    ].filter(Boolean).join("");
     return `<div class="finding" data-sev="${esc(x.severity)}">
       <h3>${esc(x.title)}</h3>
       <div class="where">${esc(x.file)}${x.line ? ":" + x.line : ""}</div>
       ${x.evidence ? `<div class="evidence">${esc(x.evidence)}</div>` : ""}
       ${prop}
-      <div class="badges">${badges}</div>
+      <div class="badges">${badgesFor(x)}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderGroups(list) {
+  const items = applyFilters(window.STATE.groups || []);
+  if (!items.length) {
+    list.innerHTML = `<div class="empty">Ничего не найдено.</div>`;
+    return;
+  }
+  list.innerHTML = items.map(g => {
+    const prop = g.proposal
+      ? `<div class="proposal"><strong>Что сделать:</strong> ${esc(g.proposal)}</div>`
+      : `<div class="proposal missing">Предложение ещё не сформулировано.</div>`;
+    const itemsHtml = (g.items || []).map(it =>
+      `<div class="group-item"><span class="loc">${esc(it.file)}${it.line ? ":" + it.line : ""}</span> · <span class="ttl">${esc(it.title)}</span></div>`
+    ).join("");
+    return `<div class="group" data-sev="${esc(g.severity)}">
+      <h3>${esc(g.title)}</h3>
+      ${prop}
+      <div class="items">${itemsHtml}</div>
+      <div class="badges">${badgesFor(g, [`<span class="badge count">×${g.count}</span>`])}</div>
     </div>`;
   }).join("");
 }
