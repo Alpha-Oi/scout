@@ -14,6 +14,10 @@ Scout never edits the scanned project. It only reports.
 |---|---|---|
 | `pytest-failed` | bug | Failing tests from the last pytest run |
 | `pip-audit` | vuln | Known CVEs in Python dependencies |
+| `bandit` | vuln | eval, subprocess(shell=True), weak crypto |
+| `ruff` | bug / improvement | Undefined names, unused imports, style |
+| `vulture` | improvement | Dead code - unused functions, variables, imports |
+| `radon` | improvement | Cyclomatic complexity > 10 |
 | `todo-fixme` | incomplete | TODO / FIXME / XXX / HACK markers |
 | `secrets` | vuln | Possible API keys, tokens, passwords in source |
 
