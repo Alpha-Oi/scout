@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Create cross-platform skill adapters pointing to SKILL.md."""
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -16,13 +17,14 @@ def link_or_copy(src: Path, dst: Path) -> str:
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists() or dst.is_symlink():
         dst.unlink()
+    # Относительный путь через os.path.relpath — не ломается между ветками
+    rel = os.path.relpath(str(src), str(dst.parent))
     try:
-        rel = src.relative_to(dst.parent)
         dst.symlink_to(rel)
         return "symlink " + str(dst.relative_to(ROOT))
-    except (OSError, NotImplementedError):
+    except (OSError, NotImplementedError) as e:
         dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-        return "copy    " + str(dst.relative_to(ROOT))
+        return "copy    " + str(dst.relative_to(ROOT)) + "  (symlink failed: " + type(e).__name__ + ")"
 
 
 def main() -> None:
