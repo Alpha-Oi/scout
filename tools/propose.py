@@ -91,11 +91,69 @@ def propose_default(f):
     }
 
 
+def propose_bandit(f):
+    """bandit: подозрительный security-паттерн."""
+    code = ""
+    evidence = (f.get("evidence") or "").strip().split("\n", 1)[0]
+    if evidence:
+        code = evidence.split(" ", 1)[0]
+    return {
+        "proposal": (f"Разобрать {code or 'bandit'}-находку: {f.get('title', '')}. "
+                     f"Проверить, эксплуатируется ли путь в проде; если да — "
+                     f"заменить на безопасный API (subprocess без shell, "
+                     f"yaml.safe_load, ast.literal_eval вместо eval)."),
+        "risk": "medium",
+        "effort": "M",
+    }
+
+
+def propose_vulture(f):
+    """vulture: мёртвый код."""
+    where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    return {
+        "proposal": (f"Проверить {where}: {f.get('title', '')}. Прогнать grep "
+                     f"по проекту — не используется ли через getattr / "
+                     f"reflection / entry points. Если нет — удалить."),
+        "risk": "low",
+        "effort": "S",
+    }
+
+
+def propose_radon(f):
+    """radon: высокая цикломатическая сложность."""
+    title = f.get("title", "")
+    where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    return {
+        "proposal": (f"Разбить {title} в {where}. Вынести ветки в отдельные "
+                     f"функции, покрыть каждую тестом, повторить radon."),
+        "risk": "low",
+        "effort": "M",
+    }
+
+
+def propose_ruff(f):
+    """ruff: стиль, unused, подозрительные конструкции."""
+    title = f.get("title", "")
+    code = title.split(":", 1)[0].strip() if ":" in title else "?"
+    where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    return {
+        "proposal": (f"Исправить {code} в {where}. Попробовать "
+                     f"ruff check --fix, затем проверить diff — "
+                     f"автофикс не всегда безопасен."),
+        "risk": "low",
+        "effort": "S",
+    }
+
+
 ROUTES = {
     "pip-audit": propose_pip_audit,
     "secrets": propose_secrets,
     "pytest-failed": propose_pytest,
     "todo-fixme": propose_todo,
+    "bandit": propose_bandit,
+    "vulture": propose_vulture,
+    "radon": propose_radon,
+    "ruff": propose_ruff,
 }
 
 

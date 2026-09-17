@@ -362,6 +362,220 @@ def detect_secrets(project, log):
     return findings
 
 
+def _module_available(name):
+    """Есть ли модуль в текущем Python (без import)."""
+    try:
+        import importlib.util
+        return importlib.util.find_spec(name) is not None
+    except Exception:                              # noqa: BLE001
+        return False
+
+
+def _tool_cmd(tool, module):
+    """Префикс команды: [tool] если в PATH, иначе [python, -m, module], иначе None."""
+    if _which(tool):
+        return [tool]
+    if _module_available(module):
+        return [sys.executable, "-m", module]
+    return None
+
+
+def _rel(project, fname):
+    """Относительный путь от project, если возможно."""
+    try:
+        return str(Path(fname).relative_to(project))
+    except (ValueError, TypeError):
+        return str(fname)
+
+
+def detect_bandit(project, log):
+    """bandit: типовые security-паттерны (eval, subprocess shell=True, и т.д.)."""
+    base = _tool_cmd("bandit", "bandit")
+    if base is None:
+        log.write("  bandit not installed — skip\n")
+        return []
+
+    excl = ",".join([".git", "node_modules", ".venv", "venv",
+                     "__pycache__", ".tox", "dist", "build"])
+    cmd = base + ["-r", str(project), "-f", "json", "-q",
+                  "--exclude", excl]
+    r = run(cmd, project, log, timeout=180)
+    if r is None or not r.stdout:
+        return []
+
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+
+    sev_map = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}
+    findings = []
+    for item in data.get("results", []):
+        sev = sev_map.get((item.get("issue_severity") or "").upper(), "low")
+        text = (item.get("issue_text") or "").strip()
+        title = text[:120] if text else item.get("test_name", "bandit issue")
+        evidence = (
+            f"{item.get('test_id', '?')} {item.get('test_name', '')}\n"
+            f"{text}"
+        ).strip()
+        findings.append(make_finding(
+            category="vuln",
+            severity=sev,
+            title=title,
+            file=_rel(project, item.get("filename", "")),
+            line=item.get("line_number", 0),
+            evidence=evidence,
+            detector="bandit",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+VULTURE_LINE = re.compile(r"^(.+?):(\d+): (.+?)(?: \((\d+)% confidence\))?\s*$")
+
+
+def detect_vulture(project, log):
+    """vulture: мёртвый код — неиспользуемые функции, переменные, импорты."""
+    base = _tool_cmd("vulture", "vulture")
+    if base is None:
+        log.write("  vulture not installed — skip\n")
+        return []
+
+    cmd = base + [str(project), "--min-confidence", "80"]
+    r = run(cmd, project, log, timeout=120)
+    if r is None:
+        return []
+
+    findings = []
+    for line in (r.stdout or "").splitlines():
+        m = VULTURE_LINE.match(line.strip())
+        if not m:
+            continue
+        fname, lineno, desc, conf = m.group(1), m.group(2), m.group(3), m.group(4)
+        findings.append(make_finding(
+            category="improvement",
+            severity="low",
+            title=desc[:120],
+            file=_rel(project, fname),
+            line=int(lineno),
+            evidence=(desc + (f" ({conf}% confidence)" if conf else "")),
+            detector="vulture",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+RADON_SEV = {"A": None, "B": "low", "C": "medium",
+             "D": "high", "E": "high", "F": "critical"}
+
+
+def detect_radon(project, log):
+    """radon: цикломатическая сложность > 10."""
+    base = _tool_cmd("radon", "radon")
+    if base is None:
+        log.write("  radon not installed — skip\n")
+        return []
+
+    cmd = base + ["cc", "-s", "-j", str(project)]
+    r = run(cmd, project, log, timeout=180)
+    if r is None or not r.stdout:
+        return []
+
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+
+    findings = []
+    for fname, items in data.items():
+        for item in (items or []):
+            rank = item.get("rank", "A")
+            sev = RADON_SEV.get(rank)
+            if sev is None:
+                continue
+            complexity = item.get("complexity", 0)
+            name = item.get("name", "?")
+            kind = item.get("type", "block")
+            findings.append(make_finding(
+                category="improvement",
+                severity=sev,
+                title=f"{kind} '{name}' сложность {complexity} ({rank})",
+                file=_rel(project, fname),
+                line=item.get("lineno", 0),
+                evidence=f"complexity={complexity} rank={rank} type={kind}",
+                detector="radon",
+            ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
+RUFF_CATEGORY = {
+    "S": "vuln",        # bandit-like
+    "B": "bug",         # bugbear
+}
+
+
+def _ruff_category(code):
+    if code.startswith("S"):
+        return "vuln"
+    if code.startswith("B"):
+        return "bug"
+    if code in ("F821", "F811", "F823", "F822"):
+        return "bug"    # undefined / redefined
+    return "improvement"
+
+
+def _ruff_severity(code):
+    if code.startswith("S"):
+        return "high"
+    if code.startswith("B"):
+        return "medium"
+    if code in ("F821", "F811", "F823", "F822"):
+        return "high"
+    if code.startswith("F"):
+        return "medium"     # F401 unused import и т.п.
+    return "low"            # E, W, C, N, D, I, UP
+
+
+def detect_ruff(project, log):
+    """ruff: стиль, неиспользуемые импорты, подозрительные конструкции."""
+    base = _tool_cmd("ruff", "ruff")
+    if base is None:
+        log.write("  ruff not installed — skip\n")
+        return []
+
+    cmd = base + ["check", "--output-format", "json", str(project)]
+    r = run(cmd, project, log, timeout=120)
+    if r is None or not r.stdout:
+        return []
+
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+
+    findings = []
+    for item in (data if isinstance(data, list) else []):
+        code = item.get("code", "?")
+        message = (item.get("message") or "").strip()
+        loc = item.get("location") or {}
+        row = loc.get("row", 0)
+        findings.append(make_finding(
+            category=_ruff_category(code),
+            severity=_ruff_severity(code),
+            title=f"{code}: {message[:100]}",
+            file=_rel(project, item.get("filename", "")),
+            line=row,
+            evidence=f"{code} {message}",
+            detector="ruff",
+        ))
+    log.write(f"  total: {len(findings)}\n")
+    return findings
+
+
 def _which(name):
     from shutil import which
     return which(name)
@@ -372,6 +586,10 @@ def _which(name):
 DETECTORS = [
     ("pytest-failed", detect_pytest_failed),
     ("pip-audit",     detect_pip_audit),
+    ("bandit",        detect_bandit),
+    ("ruff",          detect_ruff),
+    ("vulture",       detect_vulture),
+    ("radon",         detect_radon),
     ("todo-fixme",    detect_todo),
     ("secrets",       detect_secrets),
 ]
