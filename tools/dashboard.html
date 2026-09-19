@@ -217,11 +217,15 @@ function renderGroups(list) {
     const itemsHtml = (g.items || []).map(it =>
       `<div class="group-item"><span class="loc">${esc(it.file)}${it.line ? ":" + it.line : ""}</span> · <span class="ttl">${esc(it.title)}</span></div>`
     ).join("");
+    const taskBtn = g.task_md
+      ? `<button class="btn-task" onclick="copyTask(this, ${JSON.stringify(g.task_md).replace(/"/g, "&quot;")})">📋 Скопировать задачу (${g.count})</button>`
+      : "";
     return `<div class="group" data-sev="${esc(g.severity)}">
       <h3>${esc(g.title)}</h3>
       ${prop}
       <div class="items">${itemsHtml}</div>
       <div class="badges">${badgesFor(g, [`<span class="badge count">×${g.count}</span>`])}</div>
+      ${taskBtn}
     </div>`;
   }).join("");
 }
