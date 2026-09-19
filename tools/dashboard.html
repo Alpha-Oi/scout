@@ -447,33 +447,48 @@ function copyTask(btn, text) {
   }
 }
 </script>
-<!-- scout-search-override -->
+
+<!-- scout-search-v3 -->
 <style>
   .search-box {
-    display: inline-flex !important;
+    display: flex !important;
     align-items: center !important;
     gap: 8px !important;
     margin-bottom: 12px !important;
-    max-width: 520px !important;
   }
-  .search-box input {
-    flex: 0 1 auto !important;
-    width: 340px !important;
+  .search-box input,
+  .search-box input[type="search"] {
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    flex: 0 0 320px !important;
+    width: 320px !important;
+    max-width: 320px !important;
     min-width: 0 !important;
     padding: 6px 14px !important;
     border: 1px solid #d0d4d9 !important;
     border-radius: 999px !important;
     background: #fff !important;
+    background-color: #fff !important;
     color: inherit !important;
     font-size: 12px !important;
     font-family: inherit !important;
     line-height: 1.5 !important;
     height: 30px !important;
     box-sizing: border-box !important;
+    outline: none !important;
+  }
+  .search-box input::-webkit-search-decoration,
+  .search-box input::-webkit-search-cancel-button,
+  .search-box input::-webkit-search-results-button,
+  .search-box input::-webkit-search-results-decoration {
+    -webkit-appearance: none !important;
+    appearance: none !important;
   }
   .search-box input::placeholder {
     color: #aaa !important;
     font-size: 12px !important;
+    opacity: 1 !important;
   }
   .search-box input:focus {
     outline: none !important;
@@ -507,8 +522,16 @@ function copyTask(btn, text) {
     line-height: 30px !important;
   }
   @media (prefers-color-scheme: dark) {
-    .search-box input { background: #1d2027 !important; border-color: #2a2e37 !important; }
-    .search-box .clear:hover { background: #2a2e37 !important; color: #e6e6e6 !important; }
+    .search-box input,
+    .search-box input[type="search"] {
+      background: #1d2027 !important;
+      background-color: #1d2027 !important;
+      border-color: #2a2e37 !important;
+    }
+    .search-box .clear:hover {
+      background: #2a2e37 !important;
+      color: #e6e6e6 !important;
+    }
   }
 </style>
 </body>
