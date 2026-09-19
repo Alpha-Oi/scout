@@ -66,10 +66,10 @@ def propose_secrets(f):
 def propose_pytest(f):
     """Упавший тест."""
     return {
-        "proposal": (f"Запустить точечно: pytest --lf -v. Посмотреть traceback, "
-                     f"определить причину — падение в коде или устаревший тест. "
-                     f"Если тест устарел — обновить ассерт, если код сломан — "
-                     f"починить код."),
+        "proposal": ("Запустить точечно: pytest --lf -v. Посмотреть traceback, "
+                     "определить причину — падение в коде или устаревший тест. "
+                     "Если тест устарел — обновить ассерт, если код сломан — "
+                     "починить код."),
         "risk": "low",
         "effort": "M",
     }
@@ -282,7 +282,7 @@ def _detect_provider():
         req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
         with urllib.request.urlopen(req, timeout=1):
             return "ollama"
-    except Exception:
+    except Exception:  # noqa: BLE001  (probing local Ollama; any error = unavailable)
         return None
 
 
