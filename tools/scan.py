@@ -390,17 +390,40 @@ def _rel(project, fname):
         return str(fname)
 
 
-def detect_bandit(project, log):
+# Правила, которые bandit выдаёт практически всегда и которые
+# в большинстве проектов являются шумом. Отключаются по умолчанию.
+BANDIT_DEFAULT_SKIP = [
+    "B105",   # hardcoded_password_string — ловит даже '0', 'ok', пути
+    "B106",   # hardcoded_password_funcarg
+    "B107",   # hardcoded_password_default
+    "B404",   # import subprocess — парный к B603/B607
+    "B603",   # subprocess without shell — парный к B404
+    "B607",   # partial executable path
+    "B311",   # random — почти всегда не security
+    "B110",   # try/except/pass — стиль, ловится ruff
+    "B112",   # try/except/continue — стиль
+]
+
+
+def detect_bandit(project, log, config=None):
     """bandit: типовые security-паттерны (eval, subprocess shell=True, и т.д.)."""
     base = _tool_cmd("bandit", "bandit")
     if base is None:
         log.write("  bandit not installed — skip\n")
         return []
 
+    config = config or {}
+    skip = config.get("bandit_skip")
+    if skip is None:
+        skip = BANDIT_DEFAULT_SKIP
+    log.write(f"  bandit skip rules: {','.join(skip)}\n")
+
     excl = ",".join([".git", "node_modules", ".venv", "venv",
                      "__pycache__", ".tox", "dist", "build"])
     cmd = base + ["-r", str(project), "-f", "json", "-q",
                   "--exclude", excl]
+    if skip:
+        cmd += ["--skip", ",".join(skip)]
     r = run(cmd, project, log, timeout=180)
     if r is None or not r.stdout:
         return []
@@ -902,7 +925,7 @@ DETECTORS = [
 ]
 
 
-def run_detector(name, fn, project, log, idx=None, total=None):
+def run_detector(name, fn, project, log, idx=None, total=None, config=None):
     """Запустить детектор в фоне, показывая живой счётчик времени."""
     prefix = f"[{idx}/{total}]" if idx and total else "[·]"
     pad = max(0, 18 - len(name))
@@ -914,7 +937,11 @@ def run_detector(name, fn, project, log, idx=None, total=None):
 
     def worker():
         try:
-            result["findings"] = fn(project, log) or []
+            # детекторы, принимающие config (bandit), вызываются с ним
+            try:
+                result["findings"] = fn(project, log, config) or []
+            except TypeError:
+                result["findings"] = fn(project, log) or []
         except Exception as e:                   # noqa: BLE001
             result["error"] = e
 
@@ -976,6 +1003,8 @@ def main(argv=None):
                         help="Имя папки прогона (по умолчанию <дата>-<slug>)")
     parser.add_argument("--quick", action="store_true",
                         help="Пропустить медленные детекторы (pytest, pip-audit)")
+    parser.add_argument("--max-findings", type=int, default=None,
+                        help="Общий потолок находок (по умолчанию без лимита)")
     args = parser.parse_args(argv)
 
     project = Path(args.project).resolve()
@@ -1017,7 +1046,7 @@ def main(argv=None):
               + ("  (--quick)" if args.quick else ""))
         print()
         for idx, (name, fn) in enumerate(active, 1):
-            findings += run_detector(name, fn, project, log, idx, total)
+            findings += run_detector(name, fn, project, log, idx, total, config)
         print()
 
     sev_rules = config.get("severity_rules") or {}
@@ -1048,6 +1077,14 @@ def main(argv=None):
         f["file"],
         f["line"],
     ))
+
+    cap = args.max_findings
+    if cap is None:
+        cap = config.get("max_findings")
+    if cap is not None and len(findings) > cap:
+        dropped = len(findings) - cap
+        findings = findings[:cap]
+        print(f"scout: capped at {cap} findings (dropped {dropped})")
 
     (run_dir / "findings.json").write_text(
         json.dumps(findings, ensure_ascii=False, indent=2),
