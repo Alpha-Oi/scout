@@ -205,6 +205,25 @@ scout/
 └── .github/workflows/    CI: verify-skill on every push
 ```
 
+## Self-scan
+
+Scout runs its own detectors on itself. Result at the time of writing:
+
+    scout: 53 findings -> scout-reports/2026-09-19-scout-7
+      critical 0
+      high     0
+      medium   16   (semgrep: urllib on 127.0.0.1, GitHub Actions tags)
+      low      37   (radon: function complexity, style)
+
+No critical or high findings. Medium and low are either false positives
+(local Ollama URL on 127.0.0.1, fixed Anthropic/OpenAI API URLs,
+actions/checkout@v4 pinned by tag) or architectural (function length
+in tools/scan.py).
+
+Run it yourself:
+
+    python tools/scan.py . --out ./scout-reports
+
 ## License
 
 MIT. See LICENSE.
