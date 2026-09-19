@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -902,25 +903,44 @@ DETECTORS = [
 
 
 def run_detector(name, fn, project, log, idx=None, total=None):
+    """Запустить детектор в фоне, показывая живой счётчик времени."""
     prefix = f"[{idx}/{total}]" if idx and total else "[·]"
     pad = max(0, 18 - len(name))
-    print(f"  {prefix} {name}{' ' * pad}", end="  ", flush=True)
+    header = f"  {prefix} {name}{' ' * pad}"
     t0 = time.monotonic()
     log.write(f"\n[{name}]\n")
-    try:
-        findings = fn(project, log)
-    except Exception as e:                       # noqa: BLE001
-        log.write(f"  detector crashed: {e!r}\n")
+
+    result = {"findings": [], "error": None}
+
+    def worker():
+        try:
+            result["findings"] = fn(project, log) or []
+        except Exception as e:                   # noqa: BLE001
+            result["error"] = e
+
+    th = threading.Thread(target=worker, daemon=True)
+    th.start()
+
+    # Живой счётчик: обновляем строку каждые 0.1с
+    while th.is_alive():
         elapsed = time.monotonic() - t0
-        print(f"crash  ({elapsed:.1f}s)")
-        return []
+        print(f"\r{header}  {elapsed:>5.1f}s ...", end="", flush=True)
+        time.sleep(0.1)
+    th.join()
+
     elapsed = time.monotonic() - t0
+    err = result["error"]
+    if err is not None:
+        log.write(f"  detector crashed: {err!r}\n")
+        print(f"\r{header}crash  ({elapsed:.1f}s)")
+        return []
+
+    findings = result["findings"]
     log.write(f"  → {len(findings)} findings\n")
     n = len(findings)
     suffix = "finding" if n == 1 else "findings"
-    print(f"{n:>3} {suffix}  ({elapsed:>5.1f}s)")
+    print(f"\r{header}{n:>3} {suffix}  ({elapsed:>5.1f}s)")
     return findings
-
 
 def slugify(name):
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
