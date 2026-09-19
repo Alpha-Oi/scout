@@ -499,8 +499,8 @@ def detect_vulture(project, log):
     return findings
 
 
-RADON_SEV = {"A": None, "B": "low", "C": "medium",
-             "D": "high", "E": "high", "F": "critical"}
+RADON_SEV = {"A": None, "B": "low", "C": "low",
+             "D": "medium", "E": "medium", "F": "high"}
 
 
 def detect_radon(project, log):
@@ -1082,9 +1082,22 @@ def main(argv=None):
     if cap is None:
         cap = config.get("max_findings")
     if cap is not None and len(findings) > cap:
-        dropped = len(findings) - cap
-        findings = findings[:cap]
-        print(f"scout: capped at {cap} findings (dropped {dropped})")
+        # Не даём одному детектору занять больше половины бюджета.
+        per_det_cap = max(cap // 2, 20)
+        counts = {}
+        kept = []
+        for f in findings:
+            d = f["detector"]
+            if counts.get(d, 0) >= per_det_cap:
+                continue
+            kept.append(f)
+            counts[d] = counts.get(d, 0) + 1
+            if len(kept) >= cap:
+                break
+        dropped = len(findings) - len(kept)
+        print(f"scout: capped at {cap} findings (dropped {dropped}, "
+              f"per-detector max {per_det_cap})")
+        findings = kept
 
     (run_dir / "findings.json").write_text(
         json.dumps(findings, ensure_ascii=False, indent=2),
