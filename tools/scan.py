@@ -350,13 +350,15 @@ def detect_secrets(project, log):
                 continue
             if PLACEHOLDER.match(val):
                 continue
+            rel_s = str(rel)
+            in_doc = _is_doc_path(rel_s)
             findings.append(make_finding(
                 category="vuln",
-                severity="critical",
-                title=f"Возможный секрет: {var} в {rel}:{i}",
-                file=str(rel),
+                severity="low" if in_doc else "critical",
+                title=("[docs] " if in_doc else "")
+                      + f"Возможный секрет: {var} в {rel}:{i}",
+                file=rel_s,
                 line=i,
-                # Значение НЕ показываем даже обрезанным — только факт наличия.
                 evidence=f"{var} = [REDACTED]",
                 detector="secrets",
             ))
@@ -987,6 +989,20 @@ def load_scoutrc(project):
     if not isinstance(data, dict):
         return {}
     return data
+
+
+DOC_PATHS_RE = re.compile(
+    r"\.(md|rst|txt)$"
+    r"|[/\\]docs?[/\\]"
+    r"|[/\\]examples?[/\\]"
+    r"|[/\\]fixtures?[/\\]"
+    r"|README|CHANGELOG|LICENSE|SKILL\.md",
+    re.IGNORECASE,
+)
+
+
+def _is_doc_path(rel):
+    return bool(DOC_PATHS_RE.search(str(rel)))
 
 
 def slugify(name):

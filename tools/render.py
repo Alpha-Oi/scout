@@ -7,6 +7,74 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def _finding_task_md(f):
+    """Markdown-задача для одиночной находки — скопировать в Claude Code."""
+    lines = [
+        f"# Scout: {f.get('title', '')}",
+        "",
+        f"**Файл:** `{f.get('file', '?')}:{f.get('line', 0)}`",
+        f"**Детектор:** `{f.get('detector', '?')}`",
+        f"**Категория:** {f.get('category', '?')}",
+        f"**Severity:** {f.get('severity', '?')}",
+    ]
+    if f.get("evidence"):
+        lines += ["", "## Evidence", "```", f["evidence"], "```"]
+    if f.get("proposal"):
+        lines += ["", "## Предложение Scout", f["proposal"]]
+    lines += [
+        "",
+        "## Что нужно",
+        f"1. Открой `{f.get('file', '?')}` вокруг строки {f.get('line', 0)}",
+        "2. Разберись в причине и исправь",
+        "3. Прогони тесты проекта",
+        "4. Покажи diff",
+        "",
+        "_Не трогай другие находки из отчёта Scout._",
+    ]
+    return "\n".join(lines)
+
+
+def _group_task_md(g):
+    """Markdown-задача для группы находок (один код — много файлов)."""
+    items = g.get("items", [])
+    lines = [
+        f"# Scout: {g.get('code', g.get('title', ''))} — {g.get('count', len(items))} мест",
+        "",
+        f"**Детектор:** `{g.get('detector', '?')}`",
+        f"**Категория:** {g.get('category', '?')}",
+        f"**Severity:** {g.get('severity', '?')}",
+    ]
+    if g.get("proposal"):
+        lines += ["", "## Предложение Scout", g["proposal"]]
+
+    code = (g.get("code") or "").strip()
+    det = g.get("detector", "")
+    if det == "ruff" and code:
+        lines += [
+            "",
+            "## Готовый автофикс",
+            "```",
+            f"ruff check --select {code} --fix",
+            "git diff  # проверить изменения",
+            "```",
+        ]
+
+    lines += ["", f"## Все места ({len(items)})", "```"]
+    for it in items[:200]:
+        lines.append(f"{it.get('file', '?')}:{it.get('line', 0)}")
+    if len(items) > 200:
+        lines.append(f"... и ещё {len(items) - 200}")
+    lines += ["```", "",
+              "## Что нужно",
+              "1. Открой каждое место из списка",
+              "2. Исправь все",
+              "3. Прогони тесты",
+              "4. Покажи общий diff",
+              "",
+              "_Не трогай другие группы из отчёта Scout._"]
+    return "\n".join(lines)
+
+
 def _extract_code(detector, f):
     """Ключ группы: обычно код правила (I001, F841, SIM115, PYSEC-...)."""
     title = (f.get("title") or "").strip()
@@ -136,10 +204,17 @@ def main():
              "proposal": proposals.get(f["id"], {}).get("proposal"),
              "risk":     proposals.get(f["id"], {}).get("risk"),
              "effort":   proposals.get(f["id"], {}).get("effort"),
-             "diff_status": diff_status_by_id.get(f["id"])}
+             "diff_status": diff_status_by_id.get(f["id"]),
+             "task_md":  _finding_task_md({
+                 **f,
+                 "proposal": proposals.get(f["id"], {}).get("proposal"),
+             })}
             for f in findings
         ],
-        "groups": group_findings(findings, proposals),
+        "groups": [
+            {**g, "task_md": _group_task_md(g)}
+            for g in group_findings(findings, proposals)
+        ],
         "diff": diff,
     }
 

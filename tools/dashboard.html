@@ -182,12 +182,16 @@ function findingCard(x) {
   const prop = x.proposal
     ? `<div class="proposal"><strong>Что сделать:</strong> ${esc(x.proposal)}</div>`
     : `<div class="proposal missing">Предложение ещё не сформулировано.</div>`;
+  const taskBtn = x.task_md
+    ? `<button class="btn-task" onclick="copyTask(this, ${JSON.stringify(x.task_md).replace(/"/g, "&quot;")})">📋 Скопировать задачу</button>`
+    : "";
   return `<div class="finding" data-sev="${esc(x.severity)}">
     <h3>${esc(x.title)}</h3>
     <div class="where">${esc(x.file)}${x.line ? ":" + x.line : ""}</div>
     ${x.evidence ? `<div class="evidence">${esc(x.evidence)}</div>` : ""}
     ${prop}
     <div class="badges">${badgesFor(x)}</div>
+    ${taskBtn}
   </div>`;
 }
 
@@ -266,6 +270,41 @@ function renderDiff(list) {
 }
 
 render();
+</script>
+<style>
+  .btn-task { padding: 6px 12px; margin-top: 10px; border: none; border-radius: 6px;
+              background: #1a1a1a; color: #fff; cursor: pointer; font-size: 12px;
+              font-weight: 600; }
+  .btn-task:hover { opacity: 0.85; }
+  #toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+           background: #2c7a4b; color: #fff; padding: 10px 20px; border-radius: 8px;
+           font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.2s;
+           pointer-events: none; z-index: 9999; }
+  #toast.show { opacity: 1; }
+</style>
+<div id="toast"></div>
+<script>
+function copyTask(btn, text) {
+  const done = () => {
+    const t = document.getElementById("toast");
+    t.textContent = "Скопировано — вставьте в Claude Code";
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2000);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done);
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); done(); }
+    catch (e) { alert("Не удалось скопировать: " + e); }
+    document.body.removeChild(ta);
+  }
+}
 </script>
 </body>
 </html>
