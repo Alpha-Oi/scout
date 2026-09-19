@@ -1,4 +1,7 @@
+<img src="assets/logo.svg" width="80" height="80" align="left" alt="Scout" style="margin-right:16px;" />
+
 # Scout
+
 
 [![CI](https://github.com/Alpha-Oi/scout/actions/workflows/verify.yml/badge.svg)](https://github.com/Alpha-Oi/scout/actions/workflows/verify.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
