@@ -614,8 +614,19 @@ def detect_mypy(project, log):
             item = json.loads(line)
         except json.JSONDecodeError:
             continue
-        sev = "high" if item.get("severity") == "error" else "medium"
         code = item.get("code") or ""
+        raw_sev = item.get("severity") or ""
+        MYPY_NOTES = {
+            "import-untyped", "import-not-found", "no-untyped-def",
+            "no-untyped-call", "annotation-unchecked", "unused-ignore",
+            "redundant-expr",
+        }
+        if code in MYPY_NOTES:
+            sev = "low"
+        elif raw_sev == "error":
+            sev = "high"
+        else:
+            sev = "medium"
         msg = (item.get("message") or "").strip()
         title = f"{code}: {msg[:110]}" if code else msg[:120]
         findings.append(make_finding(

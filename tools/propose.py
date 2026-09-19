@@ -145,13 +145,52 @@ def propose_ruff(f):
     }
 
 
+MYPY_STUB_NOTE = {"import-untyped", "import-not-found"}
+
+
 def propose_mypy(f):
     code = (f.get("evidence") or "").split(" ", 1)[0]
     where = f"{f.get('file', '?')}:{f.get('line', 0)}"
+    if code in MYPY_STUB_NOTE:
+        return {
+            "proposal": (f"{code} в {where}: у пакета нет .pyi-стабов. "
+                         f"Добавить в pyproject.toml секцию [tool.mypy] "
+                         f"с ignore_missing_imports = true, или установить "
+                         f"пакет types-<name>, если он существует."),
+            "risk": "low",
+            "effort": "S",
+        }
+    if code == "assignment":
+        return {
+            "proposal": (f"Несовпадение типов в {where}. Частые причины: "
+                         f"open() без mode=\"rb\" при последующей работе как "
+                         f"с bytes; str вместо bytes в переменной, объявленной "
+                         f"как bytes; неверная аннотация. Открыть строку, "
+                         f"сравнить аннотацию с реальным значением."),
+            "risk": "medium",
+            "effort": "M",
+        }
+    if code == "operator":
+        return {
+            "proposal": (f"Неподдерживаемая операция в {where}. Обычно это "
+                         f"сложение bytes и str. Определить, какой тип нужен, "
+                         f"привести оба операнда к нему: .encode() для str → "
+                         f"bytes или .decode() для bytes → str."),
+            "risk": "medium",
+            "effort": "S",
+        }
+    if code == "var-annotated":
+        return {
+            "proposal": (f"Добавить аннотацию переменной в {where}. "
+                         f"Пустой список — list[<type>] с конкретным типом. "
+                         f"Пустой словарь — dict[K, V]. Без аннотации mypy "
+                         f"не может вывести тип из последующего использования."),
+            "risk": "low",
+            "effort": "S",
+        }
     return {
-        "proposal": (f"Исправить ошибку типа {code} в {where}. "
-                     f"Либо аннотировать правильным типом, либо добавить "
-                     f"# type: ignore с объяснением, если это ложное срабатывание."),
+        "proposal": (f"Исправить {code} в {where}. Либо правильная аннотация, "
+                     f"либо # type: ignore с объяснением, если ложное срабатывание."),
         "risk": "medium",
         "effort": "M",
     }
