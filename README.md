@@ -23,6 +23,24 @@ Then 5 tasks queued, fixed via `/scout-pick`, re-scan shows **6 findings, high 0
 
 ---
 
+## Installation
+
+### As a skill (Claude Code, Cursor, Codex)
+
+    npx skills add Alpha-Oi/scout
+
+One command. Installs Scout into .claude/skills/scout/.
+After that in any project: /scout <path-to-project>
+
+### As a CLI
+
+    git clone https://github.com/Alpha-Oi/scout.git
+    cd scout
+    python -m pip install pip-audit bandit ruff mypy vulture radon interrogate detect-secrets semgrep pytest
+
+Missing tools are skipped, not faked. Scout works with whatever is installed.
+
+---
 ## Quick start
 
 ```sh
