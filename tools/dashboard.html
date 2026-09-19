@@ -362,37 +362,67 @@ function renderDiff(list) {
   const sameFindings = (window.STATE.findings || []).filter(f => sameIds.has(f.id));
   const fixedFindings = (d.fixed || []).map(f => ({ ...f, diff_status: "fixed" }));
 
+  let df = "all";
+  try { df = localStorage.getItem("scout-diff-filter") || "all"; } catch (e) {}
+  if (["all", "new", "fixed", "same"].indexOf(df) < 0) df = "all";
+
   const oldName = (d.old_run || "").split(/[\\/]/).pop();
   const newName = (d.new_run || "").split(/[\\/]/).pop();
 
-  let html = `<div class="diff-details">Сравнение: <b>${esc(oldName)}</b> → <b>${esc(newName)}</b> · было ${d.old_count}, стало ${d.new_count}</div>`;
+  const filterBar = `<div class="filters diff-filter" style="margin-bottom:12px;">
+    <span class="filter ${df === "all" ? "active" : ""}" data-df="all">Все</span>
+    <span class="filter ${df === "new" ? "active" : ""}" data-df="new">Новые (${newFindings.length})</span>
+    <span class="filter ${df === "fixed" ? "active" : ""}" data-df="fixed">Исчезли (${fixedFindings.length})</span>
+    <span class="filter ${df === "same" ? "active" : ""}" data-df="same">Без изменений (${sameFindings.length})</span>
+  </div>`;
 
-  const section = (title, cls, items, renderFn) => {
+  let html = filterBar;
+  html += `<div class="diff-details">Сравнение: <b>${esc(oldName)}</b> → <b>${esc(newName)}</b> · было ${d.old_count}, стало ${d.new_count}</div>`;
+
+  const section = (title, cls, items, renderFn, kind) => {
     if (!items.length) return "";
+    if (df !== "all" && df !== kind) return "";
     return `<div class="diff-section ${cls}">
       <h2>${title}<span class="cnt">${items.length}</span></h2>
       ${items.map(renderFn).join("")}
     </div>`;
   };
 
-  html += section("Новые", "new", newFindings, findingCard);
-  html += section("Исчезли", "fixed", fixedFindings, findingCard);
+  html += section("Новые", "new", newFindings, findingCard, "new");
+  html += section("Исчезли", "fixed", fixedFindings, findingCard, "fixed");
 
-  if (sameFindings.length) {
+  if (sameFindings.length && (df === "all" || df === "same")) {
     html += `<div class="diff-section same">
       <h2>Без изменений<span class="cnt">${sameFindings.length}</span></h2>
       <div class="empty" style="padding:12px;text-align:left;">
-        ${sameFindings.length} находок были и в прошлом прогоне. Переключитесь
-        на «По находкам» или «По кодам», чтобы увидеть их полностью.
+        ${sameFindings.length} находок были и в прошлом прогоне. Переключитесь на «По находкам» или «По кодам», чтобы увидеть их полностью.
       </div>
     </div>`;
   }
 
-  if (!newFindings.length && !fixedFindings.length) {
+  if (df === "all" && !newFindings.length && !fixedFindings.length) {
     html += `<div class="empty">Между прогонами ничего не изменилось.</div>`;
+  }
+  if (df === "new" && !newFindings.length) {
+    html += `<div class="empty">Новых находок нет.</div>`;
+  }
+  if (df === "fixed" && !fixedFindings.length) {
+    html += `<div class="empty">Исчезнувших находок нет.</div>`;
+  }
+  if (df === "same" && !sameFindings.length) {
+    html += `<div class="empty">Одинаковых находок нет.</div>`;
   }
 
   list.innerHTML = html;
+
+  // Обработчики фильтра
+  list.querySelectorAll(".diff-filter .filter").forEach(el => {
+    el.addEventListener("click", () => {
+      const v = el.getAttribute("data-df") || "all";
+      try { localStorage.setItem("scout-diff-filter", v); } catch (e) {}
+      render();
+    });
+  });
 }
 
 <!-- scout-collapse-v4 -->
