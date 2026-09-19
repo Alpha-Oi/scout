@@ -305,31 +305,14 @@ function renderGroups(list) {
       : "";
     const _key = (g.key || g.code || g.title || "").toString();
     return `<div class="group" data-sev="${esc(g.severity)}" data-key="${esc(_key)}">
-      <h3><span class="arrow">▾</span> ${esc(g.title)}</h3>
+      <h3 onclick="toggleGroup(this)"><span class="arrow">▾</span> ${esc(g.title)}</h3>
       ${prop}
       <div class="items">${itemsHtml}</div>
       <div class="badges">${badgesFor(g, [`<span class="badge count">×${g.count}</span>`])}</div>
       ${taskBtn}${openBtn}
     </div>`;
   }).join("");
-
-  // --- Collapse: прицепить обработчики к свежерендеренным группам ---
-  const collapsed = getCollapsed();
-  list.querySelectorAll(".group").forEach(el => {
-    const key = el.getAttribute("data-key") || "";
-    if (collapsed.has(key)) el.classList.add("collapsed");
-    const h3 = el.querySelector("h3");
-    if (h3) {
-      h3.addEventListener("click", (ev) => {
-        // не срабатывать на кнопках внутри h3, если они есть
-        if (ev.target.closest("button, a")) return;
-        const s = getCollapsed();
-        if (el.classList.toggle("collapsed")) s.add(key);
-        else s.delete(key);
-        saveCollapsed(s);
-      });
-    }
-  });
+  applyCollapsed();
 }
 
 function renderDiff(list) {
@@ -373,6 +356,29 @@ function renderDiff(list) {
   }
 
   list.innerHTML = html;
+}
+
+function toggleGroup(h3) {
+  const g = h3.parentElement;
+  if (!g || !g.classList.contains("group")) return;
+  const key = g.getAttribute("data-key") || "";
+  let s;
+  try { s = new Set(JSON.parse(localStorage.getItem("scout-collapsed") || "[]")); }
+  catch (e) { s = new Set(); }
+  if (g.classList.toggle("collapsed")) s.add(key);
+  else s.delete(key);
+  try { localStorage.setItem("scout-collapsed", JSON.stringify([...s])); } catch (e) {}
+}
+
+function applyCollapsed() {
+  let s;
+  try { s = new Set(JSON.parse(localStorage.getItem("scout-collapsed") || "[]")); }
+  catch (e) { s = new Set(); }
+  document.querySelectorAll(".group[data-key]").forEach(function (g) {
+    const key = g.getAttribute("data-key") || "";
+    if (s.has(key)) g.classList.add("collapsed");
+    else g.classList.remove("collapsed");
+  });
 }
 
 render();
