@@ -10,8 +10,13 @@
 """
 
 import argparse
+import hashlib
 import json
+import os
 import re
+import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -252,6 +257,201 @@ def propose_detect_secrets(f):
     }
 
 
+# ---------------------------------------------------------------------------
+# LLM proposals (optional, enabled by --llm)
+# ---------------------------------------------------------------------------
+
+LLM_SYSTEM = (
+    "Ты — опытный Python-разработчик. По находке сканера отвечай строго JSON "
+    "без markdown и комментариев:\n"
+    '{"proposal": "...", "risk": "low|medium|high", "effort": "S|M|L"}\n'
+    "proposal — одно конкретное действие на русском, 1-3 предложения, "
+    "без вводных слов. Не пиши 'можно' или 'стоит рассмотреть' — "
+    "пиши что именно сделать."
+)
+
+CACHE_FILE = Path(".scout-llm-cache.json")
+
+
+def _detect_provider():
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai"
+    try:
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
+        with urllib.request.urlopen(req, timeout=1):
+            return "ollama"
+    except Exception:
+        return None
+
+
+def _cache_key(finding, provider):
+    h = hashlib.sha1(
+        (provider + "|" + finding.get("fingerprint", finding.get("id", "")))
+        .encode("utf-8")
+    ).hexdigest()
+    return h[:16]
+
+
+def _load_cache():
+    if not CACHE_FILE.exists():
+        return {}
+    try:
+        return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_cache(cache):
+    try:
+        CACHE_FILE.write_text(
+            json.dumps(cache, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _user_prompt(f):
+    parts = [
+        f"Детектор: {f.get('detector', '?')}",
+        f"Категория: {f.get('category', '?')}",
+        f"Severity: {f.get('severity', '?')}",
+        f"Файл: {f.get('file', '?')}:{f.get('line', 0)}",
+        f"Заголовок: {f.get('title', '')}",
+    ]
+    ev = (f.get("evidence") or "").strip()
+    if ev:
+        parts.append("Evidence:\n" + ev[:800])
+    return "\n".join(parts)
+
+
+def _parse_llm_json(text):
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(data, dict):
+        return None
+    prop = (data.get("proposal") or "").strip()
+    if not prop:
+        return None
+    return {
+        "proposal": prop,
+        "risk": data.get("risk") if data.get("risk") in ("low", "medium", "high") else "medium",
+        "effort": data.get("effort") if data.get("effort") in ("S", "M", "L") else "M",
+    }
+
+
+def _call_anthropic(finding):
+    key = os.environ["ANTHROPIC_API_KEY"]
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+    body = json.dumps({
+        "model": model,
+        "max_tokens": 400,
+        "system": LLM_SYSTEM,
+        "messages": [{"role": "user", "content": _user_prompt(finding)}],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=body, method="POST",
+        headers={
+            "x-api-key": key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    text = "".join(c.get("text", "") for c in data.get("content", []))
+    return _parse_llm_json(text)
+
+
+def _call_openai(finding):
+    key = os.environ["OPENAI_API_KEY"]
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": LLM_SYSTEM},
+            {"role": "user", "content": _user_prompt(finding)},
+        ],
+        "response_format": {"type": "json_object"},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=body, method="POST",
+        headers={
+            "Authorization": "Bearer " + key,
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    text = data["choices"][0]["message"]["content"]
+    return _parse_llm_json(text)
+
+
+def _call_ollama(finding):
+    model = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+    body = json.dumps({
+        "model": model,
+        "stream": False,
+        "format": "json",
+        "messages": [
+            {"role": "system", "content": LLM_SYSTEM},
+            {"role": "user", "content": _user_prompt(finding)},
+        ],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "http://127.0.0.1:11434/api/chat",
+        data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    text = (data.get("message") or {}).get("content", "")
+    return _parse_llm_json(text)
+
+
+PROVIDER_FN = {
+    "anthropic": _call_anthropic,
+    "openai": _call_openai,
+    "ollama": _call_ollama,
+}
+
+
+def llm_propose(finding, provider, cache):
+    key = _cache_key(finding, provider)
+    if key in cache:
+        return cache[key], True
+    fn = PROVIDER_FN.get(provider)
+    if fn is None:
+        return None, False
+    try:
+        result = fn(finding)
+    except (urllib.error.URLError, urllib.error.HTTPError, KeyError,
+            json.JSONDecodeError, OSError, TimeoutError) as e:
+        print(f"    LLM error ({provider}): {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return None, False
+    if result is None:
+        return None, False
+    cache[key] = result
+    return result, False
+
+
 ROUTES = {
     "pip-audit": propose_pip_audit,
     "secrets": propose_secrets,
@@ -273,6 +473,10 @@ ROUTES = {
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("run_dir", help="Каталог прогона (с findings.json)")
+    p.add_argument("--llm", action="store_true",
+                   help="Использовать LLM для предложений (Anthropic/OpenAI/Ollama)")
+    p.add_argument("--llm-max", type=int, default=20,
+                   help="Максимум LLM-запросов за прогон (по умолчанию 20)")
     args = p.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
@@ -287,11 +491,35 @@ def main():
                    "medium": "medium", "low": "low"}
     RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
+    provider = _detect_provider() if args.llm else None
+    cache = _load_cache() if provider else {}
+    llm_used = 0
+    llm_cached = 0
+    if args.llm:
+        if provider:
+            print(f"llm: provider={provider}, max={args.llm_max}", file=sys.stderr)
+        else:
+            print("llm: no provider found (ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                  "Ollama on 127.0.0.1:11434) — falling back to rules",
+                  file=sys.stderr)
+
     proposals = []
     for f in findings:
         detector = f.get("detector", "")
         fn = ROUTES.get(detector, propose_default)
         prop = fn(f) or propose_default(f)
+
+        if provider:
+            hit_cache = _cache_key(f, provider) in cache
+            if hit_cache or llm_used < args.llm_max:
+                llm_result, was_cached = llm_propose(f, provider, cache)
+                if llm_result:
+                    prop = llm_result
+                    if was_cached:
+                        llm_cached += 1
+                    else:
+                        llm_used += 1
+
         sev_risk = SEV_TO_RISK.get(f.get("severity", "low"), "low")
         if RISK_ORDER[sev_risk] > RISK_ORDER.get(prop["risk"], 0):
             prop["risk"] = sev_risk
@@ -301,6 +529,12 @@ def main():
             "risk": prop["risk"],
             "effort": prop["effort"],
         })
+
+    if provider:
+        _save_cache(cache)
+        print(f"llm: {llm_used} new + {llm_cached} cached = "
+              f"{llm_used + llm_cached} of {len(findings)} findings",
+              file=sys.stderr)
 
     out = run_dir / "proposals.json"
     out.write_text(json.dumps(proposals, ensure_ascii=False, indent=2),

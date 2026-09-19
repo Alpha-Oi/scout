@@ -21,3 +21,4 @@ Thumbs.db
 .env
 .venv/
 venv/
+.scout-llm-cache.json
