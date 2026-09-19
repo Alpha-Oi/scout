@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Alpha-Oi/scout/main/docs/scoutrc.schema.json",
+
+  "_comment": "Скопируйте этот файл в корень проекта как .scoutrc, чтобы изменить поведение Scout. Все поля опциональны.",
+
+  "skip_detectors": [
+    "_comment: список имён детекторов, которые не запускать. Пример:",
+    "pyscn",
+    "semgrep"
+  ],
+
+  "severity_rules": {
+    "_comment": "Переопределить severity для конкретного детектора. Значения: critical/high/medium/low.",
+    "todo-fixme": "low",
+    "interrogate": "low",
+    "pip-outdated": "low"
+  },
+
+  "exclude_paths": [
+    "_comment: regex-пути, которые не обходить. Совпавшие файлы игнорируются.",
+    "docs/",
+    "examples/",
+    "vendor/"
+  ],
+
+  "max_findings_per_detector": {
+    "_comment: если детектор даёт слишком много находок — обрезать до N.",
+    "pip-outdated": 20,
+    "ruff": 200
+  }
+}

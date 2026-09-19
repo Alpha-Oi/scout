@@ -942,6 +942,26 @@ def run_detector(name, fn, project, log, idx=None, total=None):
     print(f"\r{header}{n:>3} {suffix}  ({elapsed:>5.1f}s)")
     return findings
 
+def load_scoutrc(project):
+    """Прочитать .scoutrc из корня проекта. Возвращает dict или {}."""
+    path = project / ".scoutrc"
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+        # убираем строки, начинающиеся с "_comment:" внутри массивов
+        raw = re.sub(r'"\s*_comment[^"]*",?\s*\n?', "", raw)
+        # убираем висячие запятые
+        raw = re.sub(r",(\s*[}\]])", r"\1", raw)
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"scout: .scoutrc parse error: {e}", file=sys.stderr)
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
 def slugify(name):
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return s or "project"
@@ -985,7 +1005,12 @@ def main(argv=None):
         log.write(f"python:  {find_project_python(project)}\n")
 
         skip = {"pytest-failed", "pip-audit"} if args.quick else set()
-        active = [(n, f) for n, f in DETECTORS if n not in skip]
+        config = load_scoutrc(project)
+        skip_cfg = set(config.get("skip_detectors") or [])
+        active = [(n, f) for n, f in DETECTORS
+                  if n not in skip and n not in skip_cfg]
+        if skip_cfg:
+            log.write(f"skipped by .scoutrc: {sorted(skip_cfg)}\n")
         total = len(active)
         print(f"\nscout: scanning {project}\n")
         print(f"       detectors: {total}"
@@ -994,6 +1019,28 @@ def main(argv=None):
         for idx, (name, fn) in enumerate(active, 1):
             findings += run_detector(name, fn, project, log, idx, total)
         print()
+
+    sev_rules = config.get("severity_rules") or {}
+    if sev_rules:
+        for f in findings:
+            if f["detector"] in sev_rules:
+                f["severity"] = sev_rules[f["detector"]]
+
+    caps = config.get("max_findings_per_detector") or {}
+    if caps:
+        by_det = {}
+        kept = []
+        for f in findings:
+            d = f["detector"]
+            cap = caps.get(d)
+            if cap is None:
+                kept.append(f)
+                continue
+            by_det.setdefault(d, 0)
+            if by_det[d] < int(cap):
+                kept.append(f)
+                by_det[d] += 1
+        findings = kept
 
     findings.sort(key=lambda f: (
         SEVERITY_ORDER.get(f["severity"], 9),
