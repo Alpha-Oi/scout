@@ -804,7 +804,7 @@ def _pyscn_cmd():
         import importlib.util
         if importlib.util.find_spec("uv") is not None:
             return [sys.executable, "-m", "uv", "tool", "run", "pyscn"]
-    except Exception:  # noqa: BLE001  (find_spec can raise; fall back to None.)
+    except Exception:  # noqa: BLE001,S110  (find_spec can raise; fall back to None.)
         pass
     return None
 
