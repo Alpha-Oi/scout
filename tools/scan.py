@@ -121,6 +121,7 @@ def run(cmd, cwd, log, timeout=180):
             capture_output=True, text=True,
             encoding="utf-8", errors="replace",
             timeout=timeout,
+            check=False,
         )
         log.write(f"  exit={r.returncode}\n")
         if r.stderr:
@@ -240,7 +241,7 @@ def _pip_audit_cmd():
         import importlib.util
         if importlib.util.find_spec("pip_audit") is not None:
             return [sys.executable, "-m", "pip_audit"]
-    except Exception:  # noqa: S110  (find_spec can raise; fall back to None.)
+    except Exception:  # noqa: BLE001  (find_spec can raise; fall back to None.)
         pass
     return None
 
@@ -423,7 +424,7 @@ def detect_bandit(project, log, config=None):
         skip = BANDIT_DEFAULT_SKIP
     log.write(f"  bandit skip rules: {','.join(skip)}\n")
 
-    excl = ",".join([".git", "node_modules", ".venv", "venv",
+    excl = ",".join([".git", "node_modules", ".venv", "venv",  # noqa: FLY002
                      "__pycache__", ".tox", "dist", "build"])
     cmd = base + ["-r", str(project), "-f", "json", "-q",
                   "--exclude", excl]
@@ -679,7 +680,7 @@ def _project_requirements(project):
         return names
     for line in req.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
-        if not line or line.startswith("#") or line.startswith("-"):
+        if not line or line.startswith(("#", "-")):
             continue
         m = re.match(r"([A-Za-z0-9_.\-]+)", line)
         if m:
@@ -775,7 +776,7 @@ def detect_pyscn(project, log):
             import importlib.util
             if importlib.util.find_spec("uv") is not None:
                 base = [sys.executable, "-m", "uv", "tool", "run", "pyscn"]
-        except Exception:
+        except Exception:  # noqa: BLE001  (find_spec can raise; fall back to None.)
             base = None
     if base is None:
         log.write("  pyscn not installed - skip (try: uvx pyscn)\n")
@@ -1043,7 +1044,7 @@ def main(argv=None):
     out_root = Path(args.out).resolve() if args.out else Path.cwd() / ".scout"
     out_root.mkdir(parents=True, exist_ok=True)
 
-    date = datetime.now().strftime("%Y-%m-%d")
+    date = datetime.now().astimezone().strftime("%Y-%m-%d")
     run_name = args.run_name or f"{date}-{slugify(project.name)}"
     run_dir = out_root / run_name
     if run_dir.exists():
