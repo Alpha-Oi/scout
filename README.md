@@ -14,12 +14,18 @@ Scout never edits the scanned project. It only reports.
 |---|---|---|
 | `pytest-failed` | bug | Failing tests from the last pytest run |
 | `pip-audit` | vuln | Known CVEs in Python dependencies |
+| `pip-outdated` | improvement | Outdated deps from requirements.txt |
 | `bandit` | vuln | eval, subprocess(shell=True), weak crypto |
 | `ruff` | bug / improvement | Undefined names, unused imports, style |
-| `vulture` | improvement | Dead code - unused functions, variables, imports |
+| `mypy` | bug | Type errors - None, attribute, argument type |
+| `vulture` | improvement | Dead code - unused functions, variables |
 | `radon` | improvement | Cyclomatic complexity > 10 |
+| `interrogate` | improvement | Missing docstrings (coverage < 80%) |
+| `pyscn` | improvement | Code clones (Type 1-4 duplicates) |
+| `semgrep` | vuln | SAST with curated rules |
+| `detect-secrets` | vuln | Entropy-based secret detection |
 | `todo-fixme` | incomplete | TODO / FIXME / XXX / HACK markers |
-| `secrets` | vuln | Possible API keys, tokens, passwords in source |
+| `secrets` | vuln | Regex-based API keys, tokens, passwords |
 
 Missing tools are skipped, not faked. If `pip-audit` is not installed, the
 detector logs `not installed - skip` and the scan continues.

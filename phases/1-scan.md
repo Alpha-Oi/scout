@@ -14,8 +14,9 @@ large and pytest would run for more than a couple of minutes.
 
 - Walks the project, skipping node_modules, .git, dist, .venv,
   __pycache__ and other generated or service directories.
-- Runs eight detectors in order: pytest-failed, pip-audit,
-  bandit, ruff, vulture, radon, todo-fixme, secrets.
+- Runs fourteen detectors in order: pytest-failed, pip-audit,
+  pip-outdated, bandit, ruff, mypy, vulture, radon, interrogate,
+  pyscn, semgrep, detect-secrets, todo-fixme, secrets.
 - Writes run/findings.json (list of findings) and
   run/scan.log (full trace of every detector invocation).
 

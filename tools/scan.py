@@ -784,8 +784,10 @@ def detect_detect_secrets(project, log):
     if base is None:
         log.write("  detect-secrets not installed — skip\n")
         return []
-    cmd = base + ["scan", "--all-files", "--force-use-all-plugins"]
-    r = run(cmd, project, log, timeout=180)
+    excl = r"\\.venv|venv|node_modules|\\.git|__pycache__|\\.tox|dist|build|\\.mypy_cache|\\.pytest_cache"
+    cmd = base + ["scan", "--all-files", "--force-use-all-plugins",
+                  "--exclude-files", excl, str(project)]
+    r = run(cmd, project, log, timeout=300)
     if r is None or not r.stdout:
         return []
     try:
