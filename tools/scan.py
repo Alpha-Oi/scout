@@ -246,23 +246,60 @@ def _pip_audit_cmd():
     return None
 
 
+def _pip_audit_build_cmd(project, base, log):
+    req = project / "requirements.txt"
+    pyproj = project / "pyproject.toml"
+    if req.exists():
+        return base + ["-r", str(req), "--format", "json",
+                       "--progress-spinner", "off"]
+    if pyproj.exists():
+        return base + ["--path", str(project), "--format", "json",
+                       "--progress-spinner", "off"]
+    log.write("  no requirements.txt / pyproject.toml \u2014 skip\n")
+    return None
+
+
+def _pip_audit_parse(data, project):
+    req_exists = (project / "requirements.txt").exists()
+    findings = []
+    pkgs = data if isinstance(data, list) else data.get("dependencies", [])
+    for pkg in pkgs:
+        name = pkg.get("name", "?")
+        version = pkg.get("version", "?")
+        vulns = pkg.get("vulns") or pkg.get("vulnerabilities") or []
+        for v in vulns:
+            vid = v.get("id", "?")
+            fixes = v.get("fix_versions") or v.get("fixed_versions") or []
+            desc = (v.get("description") or "").strip()
+            severity = "medium" if fixes else "high"
+            evidence_lines = []
+            if desc:
+                evidence_lines.append(_clip_evidence(desc))
+            if fixes:
+                evidence_lines.append(f"Исправить в: {', '.join(fixes[:5])}")
+            else:
+                evidence_lines.append("Исправленной версии нет")
+            findings.append(make_finding(
+                category="vuln",
+                severity=severity,
+                title=f"{name} {version} уязвим ({vid})",
+                file="requirements.txt" if req_exists else "pyproject.toml",
+                line=0,
+                evidence="\n".join(evidence_lines),
+                detector="pip-audit",
+            ))
+    return findings
+
+
 def detect_pip_audit(project, log):
     """CVE в зависимостях Python. Требует pip-audit (в PATH или в текущем Python)."""
     base = _pip_audit_cmd()
     if base is None:
-        log.write("  pip-audit not installed — skip\n")
+        log.write("  pip-audit not installed \u2014 skip\n")
         return []
 
-    req = project / "requirements.txt"
-    pyproj = project / "pyproject.toml"
-    if req.exists():
-        cmd = base + ["-r", str(req), "--format", "json",
-                      "--progress-spinner", "off"]
-    elif pyproj.exists():
-        cmd = base + ["--path", str(project), "--format", "json",
-                      "--progress-spinner", "off"]
-    else:
-        log.write("  no requirements.txt / pyproject.toml — skip\n")
+    cmd = _pip_audit_build_cmd(project, base, log)
+    if cmd is None:
         return []
 
     r = run(cmd, project, log, timeout=180)
@@ -275,34 +312,7 @@ def detect_pip_audit(project, log):
         log.write(f"  json parse error: {e}\n")
         return []
 
-    findings = []
-    # pip-audit --format json: список пакетов, у каждого — vulns[]
-    for pkg in data if isinstance(data, list) else data.get("dependencies", []):
-        name = pkg.get("name", "?")
-        version = pkg.get("version", "?")
-        for v in pkg.get("vulns") or pkg.get("vulnerabilities") or []:
-            vid = v.get("id", "?")
-            fixes = v.get("fix_versions") or v.get("fixed_versions") or []
-            desc = (v.get("description") or "").strip()
-            severity = "medium" if fixes else "high"
-            title = f"{name} {version} уязвим ({vid})"
-            evidence_lines = []
-            if desc:
-                evidence_lines.append(_clip_evidence(desc))
-            if fixes:
-                evidence_lines.append(f"Исправить в: {', '.join(fixes[:5])}")
-            else:
-                evidence_lines.append("Исправленной версии нет")
-            findings.append(make_finding(
-                category="vuln",
-                severity=severity,
-                title=title,
-                file="requirements.txt" if req.exists() else "pyproject.toml",
-                line=0,
-                evidence="\n".join(evidence_lines),
-                detector="pip-audit",
-            ))
-    return findings
+    return _pip_audit_parse(data, project)
 
 
 def detect_todo(project, log):
@@ -411,35 +421,29 @@ BANDIT_DEFAULT_SKIP = [
 ]
 
 
-def detect_bandit(project, log, config=None):
-    """bandit: типовые security-паттерны (eval, subprocess shell=True, и т.д.)."""
-    base = _tool_cmd("bandit", "bandit")
-    if base is None:
-        log.write("  bandit not installed — skip\n")
-        return []
-
-    config = config or {}
-    skip = config.get("bandit_skip")
-    if skip is None:
-        skip = BANDIT_DEFAULT_SKIP
-    log.write(f"  bandit skip rules: {','.join(skip)}\n")
-
+def _bandit_build_cmd(project, base, skip):
     excl = ",".join([".git", "node_modules", ".venv", "venv",  # noqa: FLY002
                      "__pycache__", ".tox", "dist", "build"])
     cmd = base + ["-r", str(project), "-f", "json", "-q",
                   "--exclude", excl]
     if skip:
         cmd += ["--skip", ",".join(skip)]
-    r = run(cmd, project, log, timeout=180)
-    if r is None or not r.stdout:
-        return []
+    return cmd
 
-    try:
-        data = json.loads(r.stdout)
-    except json.JSONDecodeError as e:
-        log.write(f"  json parse error: {e}\n")
-        return []
 
+def _bandit_pathy_false_positive(test_id, text):
+    """B105/B106/B107 часто ловят пути ('./secret.key') вместо паролей."""
+    if test_id not in ("B105", "B106", "B107"):
+        return False
+    m = re.search(r"""['"]([^'"]+)['"]""", text)
+    if not m:
+        return False
+    val = m.group(1)
+    return ("/" in val or "\\" in val or val.startswith(".")
+            or val.endswith((".key", ".pem", ".crt", ".env")))
+
+
+def _bandit_parse(data, project):
     sev_map = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}
     findings = []
     for item in data.get("results", []):
@@ -447,13 +451,8 @@ def detect_bandit(project, log, config=None):
         text = (item.get("issue_text") or "").strip()
         title = text[:120] if text else item.get("test_name", "bandit issue")
         test_id = item.get("test_id", "")
-        if test_id in ("B105", "B106", "B107"):
-            m = re.search(r"""['"]([^'"]+)['"]""", text)
-            if m:
-                val = m.group(1)
-                if ("/" in val or "\\" in val or val.startswith(".")
-                        or val.endswith((".key", ".pem", ".crt", ".env"))):
-                    continue
+        if _bandit_pathy_false_positive(test_id, text):
+            continue
         evidence = (
             f"{item.get('test_id', '?')} {item.get('test_name', '')}\n"
             f"{text}"
@@ -467,6 +466,34 @@ def detect_bandit(project, log, config=None):
             evidence=evidence,
             detector="bandit",
         ))
+    return findings
+
+
+def detect_bandit(project, log, config=None):
+    """bandit: типовые security-паттерны (eval, subprocess shell=True, и т.д.)."""
+    base = _tool_cmd("bandit", "bandit")
+    if base is None:
+        log.write("  bandit not installed \u2014 skip\n")
+        return []
+
+    config = config or {}
+    skip = config.get("bandit_skip")
+    if skip is None:
+        skip = BANDIT_DEFAULT_SKIP
+    log.write(f"  bandit skip rules: {','.join(skip)}\n")
+
+    cmd = _bandit_build_cmd(project, base, skip)
+    r = run(cmd, project, log, timeout=180)
+    if r is None or not r.stdout:
+        return []
+
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+
+    findings = _bandit_parse(data, project)
     log.write(f"  total: {len(findings)}\n")
     return findings
 
@@ -768,35 +795,24 @@ def detect_interrogate(project, log):
     return findings
 
 
-def detect_pyscn(project, log):
-    """pyscn: дубли кода (clone detection), Type 1-4."""
+def _pyscn_cmd():
+    """pyscn через PATH или через `python -m uv tool run pyscn`."""
     base = _tool_cmd("pyscn", "pyscn")
-    if base is None:
-        try:
-            import importlib.util
-            if importlib.util.find_spec("uv") is not None:
-                base = [sys.executable, "-m", "uv", "tool", "run", "pyscn"]
-        except Exception:  # noqa: BLE001  (find_spec can raise; fall back to None.)
-            base = None
-    if base is None:
-        log.write("  pyscn not installed - skip (try: uvx pyscn)\n")
-        return []
-    cmd = base + ["analyze", "--json", "--select", "clones", "--no-open", str(project)]
-    r = run(cmd, project, log, timeout=180)
-    if r is None:
-        return []
-    # pyscn может писать JSON в stdout
-    out = (r.stdout or "").strip()
-    if not out.startswith("{"):
-        log.write("  no json output (pyscn may have written to file)\n")
-        return []
+    if base is not None:
+        return base
     try:
-        data = json.loads(out)
-    except json.JSONDecodeError as e:
-        log.write(f"  json parse error: {e}\n")
-        return []
+        import importlib.util
+        if importlib.util.find_spec("uv") is not None:
+            return [sys.executable, "-m", "uv", "tool", "run", "pyscn"]
+    except Exception:  # noqa: BLE001  (find_spec can raise; fall back to None.)
+        pass
+    return None
+
+
+def _pyscn_parse(data, project):
     findings = []
-    for clone in (data.get("clones") or data.get("duplicates") or []):
+    clones = data.get("clones") or data.get("duplicates") or []
+    for clone in clones:
         sim = clone.get("similarity", 0)
         sev = "high" if sim >= 0.9 else "medium"
         locs = clone.get("locations") or clone.get("files") or []
@@ -812,6 +828,30 @@ def detect_pyscn(project, log):
             evidence=f"clone similarity={sim:.2f} locations={len(locs)}",
             detector="pyscn",
         ))
+    return findings
+
+
+def detect_pyscn(project, log):
+    """pyscn: дубли кода (clone detection), Type 1-4."""
+    base = _pyscn_cmd()
+    if base is None:
+        log.write("  pyscn not installed - skip (try: uvx pyscn)\n")
+        return []
+    cmd = base + ["analyze", "--json", "--select", "clones", "--no-open",
+                  str(project)]
+    r = run(cmd, project, log, timeout=180)
+    if r is None:
+        return []
+    out = (r.stdout or "").strip()
+    if not out.startswith("{"):
+        log.write("  no json output (pyscn may have written to file)\n")
+        return []
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError as e:
+        log.write(f"  json parse error: {e}\n")
+        return []
+    findings = _pyscn_parse(data, project)
     log.write(f"  total: {len(findings)}\n")
     return findings
 
