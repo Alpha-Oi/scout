@@ -121,6 +121,35 @@
     .search-box input { background: #1d2027; border-color: #2a2e37; }
     .search-box .clear:hover { background: #2a2e37; color: #e6e6e6; }
   }
+
+  /* scout-export-v2 */
+  .export-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e3e6ea;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .btn-export {
+    padding: 6px 12px;
+    border: 1px solid #d0d4d9;
+    border-radius: 999px;
+    background: #fff;
+    color: inherit;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    line-height: 1.5;
+    user-select: none;
+  }
+  .btn-export:hover { background: #f0f0f2; border-color: #1a1a1a; }
+  .export-bar .hint { color: #888; font-size: 11px; padding: 0 4px; }
+  @media (prefers-color-scheme: dark) {
+    .btn-export { background: #1d2027; border-color: #2a2e37; }
+    .btn-export:hover { background: #2a2e37; }
+  }
 </style>
 </head>
 <body>
@@ -135,8 +164,14 @@
     <span class="hint" id="search-hint"></span>
     <span class="clear" id="search-clear" title="Очистить (Esc)">×</span>
   </div>
+<!-- scout-export-v2 -->
+<div class="export-bar" id="export-bar">
+  <button class="btn-export" onclick="downloadSarif()">↓ SARIF</button>
+  <button class="btn-export" onclick="downloadMarkdown()">↓ Markdown</button>
+  <button class="btn-export" onclick="copyMarkdown()">📋 Markdown в буфер</button>
+  <span class="hint" id="export-hint"></span>
+</div>
 
-<div class="filters view" id="view-toggle"></div>
   <div class="filters" id="filters"></div>
   <div id="list"></div>
 
@@ -389,6 +424,181 @@ function applyCollapsed() {
       if (items) items.style.display = "";
     }
   });
+}
+
+
+// --- Экспорт (SARIF, Markdown) ---
+function _sevToSarifLevel(sev) {
+  if (sev === "critical" || sev === "high") return "error";
+  if (sev === "medium") return "warning";
+  return "note";
+}
+function _sevToEmoji(sev) {
+  return { critical: "🟥", high: "🟠", medium: "🟡", low: "🟢" }[sev] || "⚪";
+}
+function _collectFindings() {
+  return (window.STATE && window.STATE.findings) ? window.STATE.findings : [];
+}
+function _collectGroups() {
+  return (window.STATE && window.STATE.groups) ? window.STATE.groups : [];
+}
+function buildSarif() {
+  const findings = _collectFindings();
+  const rulesMap = {};
+  findings.forEach(f => {
+    const id = (f.detector || "unknown") + "/" + (f.code || "issue");
+    if (!rulesMap[id]) {
+      rulesMap[id] = {
+        id: id,
+        name: f.code || f.detector || "issue",
+        shortDescription: { text: f.detector || "scout" },
+        defaultConfiguration: { level: _sevToSarifLevel(f.severity) }
+      };
+    }
+  });
+  const results = findings.map(f => {
+    const id = (f.detector || "unknown") + "/" + (f.code || "issue");
+    const result = {
+      ruleId: id,
+      level: _sevToSarifLevel(f.severity),
+      message: { text: String(f.title || "") + (f.proposal ? " — " + f.proposal : "") },
+      locations: [{
+        physicalLocation: {
+          artifactLocation: { uri: (f.file || "").replace(/\\/g, "/") },
+          region: { startLine: Math.max(1, parseInt(f.line) || 1) }
+        }
+      }],
+      properties: {
+        detector: f.detector, category: f.category, severity: f.severity,
+        risk: f.risk, effort: f.effort, fingerprint: f.fingerprint || f.id
+      }
+    };
+    if (f.evidence) result.properties.evidence = String(f.evidence).slice(0, 500);
+    return result;
+  });
+  return {
+    "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [{
+      "tool": {
+        "driver": {
+          "name": "Scout",
+          "informationUri": "https://github.com/Alpha-Oi/scout",
+          "version": "1.0",
+          "rules": Object.values(rulesMap)
+        }
+      },
+      "results": results
+    }]
+  };
+}
+function buildMarkdown() {
+  const s = window.STATE;
+  const findings = _collectFindings();
+  const groups = _collectGroups();
+  const summary = (s.summary && s.summary.severities) || {};
+  const lines = [];
+  const runDate = (s.run && s.run.started) || new Date().toISOString();
+  const projectRoot = (s.run && s.run.project_root) || "";
+  lines.push("# Scout — отчёт по проекту");
+  lines.push("");
+  lines.push("**Дата:** " + runDate);
+  if (projectRoot) lines.push("**Проект:** `" + projectRoot + "`");
+  lines.push("**Находок:** " + findings.length);
+  lines.push("");
+  lines.push("| Severity | Кол-во |");
+  lines.push("|---|---|");
+  ["critical", "high", "medium", "low"].forEach(k => {
+    lines.push("| " + _sevToEmoji(k) + " " + k + " | " + (summary[k] || 0) + " |");
+  });
+  lines.push("");
+  if (groups.length) {
+    lines.push("## По кодам");
+    lines.push("");
+    lines.push("| Код | Кол-во | Severity |");
+    lines.push("|---|---|---|");
+    groups.forEach(g => {
+      const code = (g.code || g.detector || "?");
+      lines.push("| `" + code + "` | " + (g.count || 0) + " | " + (g.severity || "") + " |");
+    });
+    lines.push("");
+  }
+  lines.push("## Находки");
+  lines.push("");
+  findings.forEach((f, i) => {
+    lines.push("### " + (i + 1) + ". " + _sevToEmoji(f.severity) + " " + (f.title || ""));
+    lines.push("");
+    lines.push("- **Файл:** `" + (f.file || "?") + (f.line ? ":" + f.line : "") + "`");
+    lines.push("- **Детектор:** `" + (f.detector || "?") + "`");
+    lines.push("- **Категория:** " + (f.category || "?") + "  ·  **Severity:** " + (f.severity || "?"));
+    if (f.risk || f.effort) {
+      lines.push("- **Risk:** " + (f.risk || "?") + "  ·  **Effort:** " + (f.effort || "?"));
+    }
+    if (f.evidence) {
+      lines.push("");
+      lines.push("```");
+      lines.push(String(f.evidence));
+      lines.push("```");
+    }
+    if (f.proposal) {
+      lines.push("");
+      lines.push("**Что сделать:** " + f.proposal);
+    }
+    lines.push("");
+  });
+  lines.push("---");
+  lines.push("");
+  lines.push("_Сгенерировано Scout · https://github.com/Alpha-Oi/scout_");
+  return lines.join("\n");
+}
+function _download(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function _flashHint(msg) {
+  const el = document.getElementById("export-hint");
+  if (!el) return;
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = ""; }, 2000);
+}
+function _runStamp() {
+  return ((window.STATE.run && window.STATE.run.started) || "")
+    .replace(/[:.]/g, "-").slice(0, 19);
+}
+function downloadSarif() {
+  _download("findings-" + _runStamp() + ".sarif",
+            JSON.stringify(buildSarif(), null, 2),
+            "application/json");
+  _flashHint("SARIF скачан");
+}
+function downloadMarkdown() {
+  _download("report-" + _runStamp() + ".md",
+            buildMarkdown(),
+            "text/markdown");
+  _flashHint("Markdown скачан");
+}
+function copyMarkdown() {
+  const md = buildMarkdown();
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(md).then(() => _flashHint("Markdown в буфере"));
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = md;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); _flashHint("Markdown в буфере"); }
+    catch (e) { alert("Не удалось скопировать: " + e); }
+    document.body.removeChild(ta);
+  }
 }
 
 
