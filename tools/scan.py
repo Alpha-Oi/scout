@@ -971,6 +971,17 @@ def run_detector(name, fn, project, log, idx=None, total=None, config=None):
     print(f"\r{header}{n:>3} {suffix}  ({elapsed:>5.1f}s)")
     return findings
 
+def _strip_keys(obj):
+    """Удалить ключи, начинающиеся с _ или __, рекурсивно. Позволяет
+    писать комментарии в .scoutrc как "_comment": "..."."""
+    if isinstance(obj, dict):
+        return {k: _strip_keys(v) for k, v in obj.items()
+                if not str(k).startswith("_")}
+    if isinstance(obj, list):
+        return [_strip_keys(v) for v in obj]
+    return obj
+
+
 def load_scoutrc(project):
     """Прочитать .scoutrc из корня проекта. Возвращает dict или {}."""
     path = project / ".scoutrc"
@@ -978,9 +989,7 @@ def load_scoutrc(project):
         return {}
     try:
         raw = path.read_text(encoding="utf-8")
-        # убираем строки, начинающиеся с "_comment:" внутри массивов
-        raw = re.sub(r'"\s*_comment[^"]*",?\s*\n?', "", raw)
-        # убираем висячие запятые
+        # убираем висячие запятые (JSON5-стиль)
         raw = re.sub(r",(\s*[}\]])", r"\1", raw)
         data = json.loads(raw)
     except (OSError, json.JSONDecodeError) as e:
@@ -988,7 +997,7 @@ def load_scoutrc(project):
         return {}
     if not isinstance(data, dict):
         return {}
-    return data
+    return _strip_keys(data)
 
 
 DOC_PATHS_RE = re.compile(
