@@ -631,8 +631,28 @@ def detect_mypy(project, log):
     return findings
 
 
+def _project_requirements(project):
+    """Имена пакетов из requirements.txt (нормализованные)."""
+    names = set()
+    req = project / "requirements.txt"
+    if not req.exists():
+        return names
+    for line in req.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        m = re.match(r"([A-Za-z0-9_.\-]+)", line)
+        if m:
+            names.add(re.sub(r"[-_.]+", "-", m.group(1).lower()))
+    return names
+
+
 def detect_pip_outdated(project, log):
-    """pip list --outdated: устаревшие зависимости без CVE."""
+    """pip list --outdated, отфильтрованный по requirements.txt проекта."""
+    req_names = _project_requirements(project)
+    if not req_names:
+        log.write("  no requirements.txt or empty - skip\n")
+        return []
     cmd = [sys.executable, "-m", "pip", "list", "--outdated", "--format", "json"]
     r = run(cmd, project, log, timeout=120)
     if r is None or not r.stdout:
@@ -643,11 +663,15 @@ def detect_pip_outdated(project, log):
         log.write(f"  json parse error: {e}\n")
         return []
     findings = []
+    kept = 0
     for item in data if isinstance(data, list) else []:
         name = item.get("name", "?")
+        norm = re.sub(r"[-_.]+", "-", name.lower())
+        if norm not in req_names:
+            continue
+        kept += 1
         cur = item.get("version", "?")
         latest = item.get("latest_version", "?")
-        # major bump — выше severity
         try:
             cur_major = int(str(cur).split(".")[0])
             new_major = int(str(latest).split(".")[0])
@@ -657,14 +681,16 @@ def detect_pip_outdated(project, log):
         findings.append(make_finding(
             category="improvement",
             severity=sev,
-            title=f"{name}: {cur} → {latest}",
+            title=f"{name}: {cur} -> {latest}",
             file="requirements.txt",
             line=0,
             evidence=f"{name} {cur} -> {latest}",
             detector="pip-outdated",
         ))
-    log.write(f"  total: {len(findings)}\n")
+    log.write(f"  total: {len(findings)} (of {len(data)} outdated in env)\n")
     return findings
+
+
 
 
 def detect_interrogate(project, log):
@@ -705,7 +731,14 @@ def detect_pyscn(project, log):
     """pyscn: дубли кода (clone detection), Type 1-4."""
     base = _tool_cmd("pyscn", "pyscn")
     if base is None:
-        log.write("  pyscn not installed — skip (try: uvx pyscn)\n")
+        try:
+            import importlib.util
+            if importlib.util.find_spec("uv") is not None:
+                base = [sys.executable, "-m", "uv", "tool", "run", "pyscn"]
+        except Exception:
+            base = None
+    if base is None:
+        log.write("  pyscn not installed - skip (try: uvx pyscn)\n")
         return []
     cmd = base + ["analyze", "--json", "--select", "clones", "--no-open", str(project)]
     r = run(cmd, project, log, timeout=180)
@@ -796,9 +829,27 @@ def detect_detect_secrets(project, log):
     except json.JSONDecodeError as e:
         log.write(f"  json parse error: {e}\n")
         return []
+    SKIP_RE = re.compile(
+        r"(?:^|[/\\])("
+        r"\.venv|venv|node_modules|\.git|__pycache__|\.tox|dist|build|"
+        r"\.mypy_cache|\.pytest_cache|\.ruff_cache|"
+        r"chrome_profile|CachedData|Code Cache|GPUCache|"
+        r"Cache|Cookies|History|Web Data|Local State|Preferences|"
+        r"TransportSecurity|BrowsingTopicsState|leveldb"
+        r")(?:[/\\]|$)",
+        re.IGNORECASE,
+    )
+
     findings = []
+    kept = 0
+    skipped = 0
     for fname, items in (data.get("results") or {}).items():
+        norm = fname.replace("\\", "/")
+        if SKIP_RE.search("/" + norm):
+            skipped += len(items or [])
+            continue
         for it in items or []:
+            kept += 1
             line = it.get("line_number", 0)
             stype = it.get("type", "Secret")
             findings.append(make_finding(
@@ -807,10 +858,10 @@ def detect_detect_secrets(project, log):
                 title=f"{stype} в {fname}:{line}",
                 file=_rel(project, fname),
                 line=line,
-                evidence=f"{stype} hashed={it.get('hashed_secret', '')[:16]}…",
+                evidence=f"{stype} hashed={it.get('hashed_secret', '')[:16]}...",
                 detector="detect-secrets",
             ))
-    log.write(f"  total: {len(findings)}\n")
+    log.write(f"  total: {len(findings)} (skipped {skipped} from caches/profiles)\n")
     return findings
 
 
@@ -893,6 +944,7 @@ def main(argv=None):
     run_dir.mkdir(parents=True)
 
     findings = []
+    t_start = time.monotonic()
     with open(run_dir / "scan.log", "w", encoding="utf-8") as log:
         log.write("scout scan\n")
         log.write(f"project: {project}\n")
