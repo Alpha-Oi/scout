@@ -289,7 +289,8 @@ def _detect_provider():
 def _cache_key(finding, provider):
     h = hashlib.sha1(
         (provider + "|" + finding.get("fingerprint", finding.get("id", "")))
-        .encode("utf-8")
+        .encode("utf-8"),
+        usedforsecurity=False,
     ).hexdigest()
     return h[:16]
 
@@ -315,11 +316,11 @@ def _save_cache(cache):
 
 def _user_prompt(f):
     parts = [
-        f"Детектор: {f.get('detector', '?')}",
-        f"Категория: {f.get('category', '?')}",
-        f"Severity: {f.get('severity', '?')}",
-        f"Файл: {f.get('file', '?')}:{f.get('line', 0)}",
-        f"Заголовок: {f.get('title', '')}",
+        "Детектор: " + str(f.get("detector", "?")),
+        "Категория: " + str(f.get("category", "?")),
+        "Severity: " + str(f.get("severity", "?")),
+        "Файл: " + str(f.get("file", "?")) + ":" + str(f.get("line", 0)),
+        "Заголовок: " + str(f.get("title", "")),
     ]
     ev = (f.get("evidence") or "").strip()
     if ev:

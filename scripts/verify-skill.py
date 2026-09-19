@@ -43,8 +43,11 @@ def main() -> int:
     for py in list((ROOT / "tools").glob("*.py")) + list((ROOT / "scripts").glob("*.py")):
         try:
             ast.parse(py.read_text(encoding="utf-8"))
-        except SyntaxError as e:
-            errors.append(str(py.relative_to(ROOT)) + ": syntax error line " + str(e.lineno) + ": " + e.msg)
+        except SyntaxError as exc:
+            rel = str(py.relative_to(ROOT))
+            lineno = exc.lineno
+            msg = exc.msg
+            errors.append(f"{rel}: syntax error line {lineno}: {msg}")
 
     dash = ROOT / "tools" / "dashboard.html"
     if dash.exists():

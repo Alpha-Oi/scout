@@ -92,7 +92,10 @@ SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 def make_finding(category, severity, title, file, line, evidence, detector):
     """Единый формат находки. fingerprint стабилен между прогонами."""
     fingerprint = f"{detector}:{file}:{line}:{title}"
-    fid = "sha1:" + hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:8]
+    fid = "sha1:" + hashlib.sha1(
+        fingerprint.encode("utf-8"),
+        usedforsecurity=False,
+    ).hexdigest()[:8]
     return {
         "id": fid,
         "category": category,          # bug | vuln | incomplete | improvement
