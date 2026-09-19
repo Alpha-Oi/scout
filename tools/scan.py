@@ -241,7 +241,7 @@ def _pip_audit_cmd():
         import importlib.util
         if importlib.util.find_spec("pip_audit") is not None:
             return [sys.executable, "-m", "pip_audit"]
-    except Exception:  # noqa: BLE001  (find_spec can raise; fall back to None.)
+    except Exception:  # noqa: BLE001,S110  (find_spec can raise; fall back to None.)
         pass
     return None
 
