@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -838,14 +839,24 @@ DETECTORS = [
 ]
 
 
-def run_detector(name, fn, project, log):
+def run_detector(name, fn, project, log, idx=None, total=None):
+    prefix = f"[{idx}/{total}]" if idx and total else "[·]"
+    pad = max(0, 18 - len(name))
+    print(f"  {prefix} {name}{' ' * pad}", end="  ", flush=True)
+    t0 = time.monotonic()
     log.write(f"\n[{name}]\n")
     try:
         findings = fn(project, log)
     except Exception as e:                       # noqa: BLE001
         log.write(f"  detector crashed: {e!r}\n")
+        elapsed = time.monotonic() - t0
+        print(f"crash  ({elapsed:.1f}s)")
         return []
+    elapsed = time.monotonic() - t0
     log.write(f"  → {len(findings)} findings\n")
+    n = len(findings)
+    suffix = "finding" if n == 1 else "findings"
+    print(f"{n:>3} {suffix}  ({elapsed:>5.1f}s)")
     return findings
 
 
@@ -907,7 +918,8 @@ def main(argv=None):
     for f in findings:
         counts[f["severity"]] = counts.get(f["severity"], 0) + 1
 
-    print(f"scout: {len(findings)} findings → {run_dir}")
+    total_elapsed = time.monotonic() - t_start
+    print(f"scout: {len(findings)} findings → {run_dir}  ({total_elapsed:.1f}s)")
     for sev in ("critical", "high", "medium", "low"):
         if counts.get(sev):
             print(f"  {sev:<8} {counts[sev]}")
