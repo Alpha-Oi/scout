@@ -951,8 +951,16 @@ def main(argv=None):
         log.write(f"time:    {datetime.now(timezone.utc).isoformat(timespec='seconds')}\n")
         log.write(f"python:  {find_project_python(project)}\n")
 
-        for name, fn in DETECTORS:
-            findings += run_detector(name, fn, project, log)
+        skip = {"pytest-failed", "pip-audit"} if args.quick else set()
+        active = [(n, f) for n, f in DETECTORS if n not in skip]
+        total = len(active)
+        print(f"\nscout: scanning {project}\n")
+        print(f"       detectors: {total}"
+              + ("  (--quick)" if args.quick else ""))
+        print()
+        for idx, (name, fn) in enumerate(active, 1):
+            findings += run_detector(name, fn, project, log, idx, total)
+        print()
 
     findings.sort(key=lambda f: (
         SEVERITY_ORDER.get(f["severity"], 9),
