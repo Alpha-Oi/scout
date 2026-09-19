@@ -202,13 +202,16 @@ function findingCard(x) {
   const taskBtn = x.task_md
     ? `<button class="btn-task" onclick="copyTask(this, ${JSON.stringify(x.task_md).replace(/"/g, "&quot;")})">📋 Скопировать задачу</button>`
     : "";
+  const openBtn = x.file
+    ? `<a class="btn-open" href="javascript:void(0)" onclick="openInVSCode(this, ${JSON.stringify(x.file).replace(/"/g, "&quot;")}, ${x.line || 0})">🔎 Открыть в VS Code</a>`
+    : "";
   return `<div class="finding" data-sev="${esc(x.severity)}">
     <h3>${esc(x.title)}</h3>
     <div class="where">${esc(x.file)}${x.line ? ":" + x.line : ""}</div>
     ${x.evidence ? `<div class="evidence">${esc(x.evidence)}</div>` : ""}
     ${prop}
     <div class="badges">${badgesFor(x)}</div>
-    ${taskBtn}
+    ${taskBtn}${openBtn}
   </div>`;
 }
 
@@ -237,12 +240,16 @@ function renderGroups(list) {
     const taskBtn = g.task_md
       ? `<button class="btn-task" onclick="copyTask(this, ${JSON.stringify(g.task_md).replace(/"/g, "&quot;")})">📋 Скопировать задачу (${g.count})</button>`
       : "";
+    const firstItem = (g.items && g.items[0]) || {};
+    const openBtn = firstItem.file
+      ? `<a class="btn-open" href="javascript:void(0)" onclick="openInVSCode(this, ${JSON.stringify(firstItem.file).replace(/"/g, "&quot;")}, ${firstItem.line || 0})">🔎 Первый файл</a>`
+      : "";
     return `<div class="group" data-sev="${esc(g.severity)}">
       <h3>${esc(g.title)}</h3>
       ${prop}
       <div class="items">${itemsHtml}</div>
       <div class="badges">${badgesFor(g, [`<span class="badge count">×${g.count}</span>`])}</div>
-      ${taskBtn}
+      ${taskBtn}${openBtn}
     </div>`;
   }).join("");
 }
@@ -291,6 +298,13 @@ function renderDiff(list) {
 }
 
 render();
+
+function openInVSCode(btn, file, line) {
+  const clean = String(file).replace(/\\/g, "/").replace(/^\/+/, "");
+  const base = "vscode://file/${clean}";
+  const url = line && line > 0 ? `${base}:${line}` : base;
+  window.location.href = url;
+}
 
 // --- Поиск ---
 const searchInput = document.getElementById("search");
