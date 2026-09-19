@@ -300,9 +300,13 @@ function renderDiff(list) {
 render();
 
 function openInVSCode(btn, file, line) {
+  const root = (window.STATE.run && window.STATE.run.project_root) || "";
   const clean = String(file).replace(/\\/g, "/").replace(/^\/+/, "");
-  const base = "vscode://file/${clean}";
-  const url = line && line > 0 ? `${base}:${line}` : base;
+  const full = root
+    ? root.replace(/\\/g, "/").replace(/\/+$/, "") + "/" + clean
+    : clean;
+  const base = "vscode://file/" + full;
+  const url = line && line > 0 ? base + ":" + line : base;
   window.location.href = url;
 }
 

@@ -1190,9 +1190,13 @@ def _apply_max_findings(findings, cli_cap, config):
     return kept
 
 
-def _write_findings(run_dir, findings):
+def _write_findings(run_dir, findings, project):
     (run_dir / "findings.json").write_text(
         json.dumps(findings, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (run_dir / "meta.json").write_text(
+        json.dumps({"project_root": str(project)}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -1223,7 +1227,7 @@ def main(argv=None):
     findings = _apply_per_detector_caps(findings, config)
     findings = _sort_findings(findings)
     findings = _apply_max_findings(findings, args.max_findings, config)
-    _write_findings(run_dir, findings)
+    _write_findings(run_dir, findings, project)
     _print_summary(findings, run_dir, time.monotonic() - t_start)
     return 0
 
