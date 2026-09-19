@@ -275,6 +275,14 @@ function renderFindings(list) {
   list.innerHTML = items.map(findingCard).join("");
 }
 
+function getCollapsed() {
+  try { return new Set(JSON.parse(localStorage.getItem("scout-collapsed") || "[]")); }
+  catch (e) { return new Set(); }
+}
+function saveCollapsed(s) {
+  try { localStorage.setItem("scout-collapsed", JSON.stringify([...s])); } catch (e) {}
+}
+
 function renderGroups(list) {
   const items = applyFilters(window.STATE.groups || []);
   if (!items.length) {
@@ -304,6 +312,24 @@ function renderGroups(list) {
       ${taskBtn}${openBtn}
     </div>`;
   }).join("");
+
+  // --- Collapse: прицепить обработчики к свежерендеренным группам ---
+  const collapsed = getCollapsed();
+  list.querySelectorAll(".group").forEach(el => {
+    const key = el.getAttribute("data-key") || "";
+    if (collapsed.has(key)) el.classList.add("collapsed");
+    const h3 = el.querySelector("h3");
+    if (h3) {
+      h3.addEventListener("click", (ev) => {
+        // не срабатывать на кнопках внутри h3, если они есть
+        if (ev.target.closest("button, a")) return;
+        const s = getCollapsed();
+        if (el.classList.toggle("collapsed")) s.add(key);
+        else s.delete(key);
+        saveCollapsed(s);
+      });
+    }
+  });
 }
 
 function renderDiff(list) {
@@ -623,5 +649,36 @@ function copyTask(btn, text) {
   applyCollapsed();
 })();
 </script>
+<!-- scout-collapse-v2 -->
+<style>
+  .group h3 {
+    cursor: pointer;
+    user-select: none;
+  }
+  .group h3 .arrow {
+    display: inline-block;
+    width: 14px;
+    color: #666;
+    transition: transform 0.15s ease;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .group.collapsed h3 .arrow {
+    transform: rotate(-90deg);
+  }
+  .group .items {
+    overflow: hidden !important;
+    max-height: 260px !important;
+    transition: max-height 0.2s ease !important;
+    margin-top: 8px;
+  }
+  .group.collapsed .items {
+    max-height: 0 !important;
+    margin-top: 0 !important;
+  }
+  @media (prefers-color-scheme: dark) {
+    .group h3 .arrow { color: #aaa; }
+  }
+</style>
 </body>
 </html>
