@@ -78,7 +78,14 @@
 
   <div class="summary" id="summary"></div>
 
-  <div class="filters view" id="view-toggle"></div>
+    <div class="search-box">
+    <input type="search" id="search" placeholder="Поиск: файл, заголовок, детектор, evidence… (/ — фокус)"
+           autocomplete="off" spellcheck="false">
+    <span class="hint" id="search-hint"></span>
+    <span class="clear" id="search-clear" title="Очистить (Esc)">×</span>
+  </div>
+
+<div class="filters view" id="view-toggle"></div>
   <div class="filters" id="filters"></div>
   <div id="list"></div>
 
@@ -94,7 +101,7 @@ const SEV_LABEL = { critical: "Критично", high: "Высоко",
                     medium: "Средне", low: "Низко" };
 
 let view = "findings";   // findings | groups | diff
-let filter = { severity: null, category: null };
+let filter = { severity: null, category: null, q: "" };
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
@@ -161,6 +168,16 @@ function applyFilters(items) {
   let out = items;
   if (filter.severity) out = out.filter(x => x.severity === filter.severity);
   if (filter.category) out = out.filter(x => x.category === filter.category);
+  if (filter.q) {
+    const q = filter.q.toLowerCase();
+    out = out.filter(x => {
+      const hay = [
+        x.title, x.file, x.detector, x.evidence, x.proposal,
+        x.category, x.code, x.key, x.where
+      ].filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }
   return out;
 }
 
@@ -274,6 +291,57 @@ function renderDiff(list) {
 }
 
 render();
+
+// --- Поиск ---
+const searchInput = document.getElementById("search");
+const searchHint = document.getElementById("search-hint");
+const searchClear = document.getElementById("search-clear");
+
+function updateSearchHint() {
+  if (!filter.q) {
+    searchHint.textContent = "";
+    return;
+  }
+  const total = (view === "groups")
+    ? (window.STATE.groups || []).length
+    : (view === "diff")
+      ? (window.STATE.findings || []).length
+      : (window.STATE.findings || []).length;
+  const shown = (window.STATE.groups ? applyFilters(view === "groups"
+    ? window.STATE.groups : window.STATE.findings) : []).length;
+  searchHint.textContent = shown + " / " + total;
+}
+
+searchInput.addEventListener("input", () => {
+  filter.q = searchInput.value.trim();
+  render();
+  updateSearchHint();
+});
+
+searchClear.addEventListener("click", () => {
+  searchInput.value = "";
+  filter.q = "";
+  render();
+  updateSearchHint();
+  searchInput.focus();
+});
+
+document.addEventListener("keydown", (e) => {
+  const inField = document.activeElement &&
+                  (document.activeElement.tagName === "INPUT" ||
+                   document.activeElement.tagName === "TEXTAREA");
+  if (e.key === "/" && !inField) {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  } else if (e.key === "Escape" && document.activeElement === searchInput) {
+    searchInput.value = "";
+    filter.q = "";
+    render();
+    updateSearchHint();
+    searchInput.blur();
+  }
+});
 </script>
 <style>
   .btn-task { padding: 6px 12px; margin-top: 10px; border: none; border-radius: 6px;
