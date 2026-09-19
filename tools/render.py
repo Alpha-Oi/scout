@@ -169,6 +169,18 @@ def load_meta(run_dir):
     return data if isinstance(data, dict) else {}
 
 
+def load_meta(run_dir):
+    """Прочитать meta.json (project_root и пр.), если есть."""
+    path = run_dir / "meta.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("run_dir", help="Каталог прогона (с findings.json)")
