@@ -36,28 +36,79 @@ def _group_by_fp(findings):
     return by_fp
 
 
+def _soft_key(f):
+    """Ключ без line — для сопоставления находок, сместившихся по строкам."""
+    return (
+        f.get("detector", ""),
+        str(f.get("file", "")).replace("\\", "/"),
+        f.get("title", ""),
+    )
+
+
 def compare(old, new):
-    """Сопоставить старый и новый прогоны по fingerprint, с учётом дубликатов."""
+    """Двухуровневое сопоставление:
+       1. Точный fingerprint (быстро, честно).
+       2. Fallback по (detector, file, title) для переместившихся.
+
+    Инварианты:
+       same + new   == len(new)
+       same + fixed == len(old)
+    """
     old_by_fp = _group_by_fp(old)
     new_by_fp = _group_by_fp(new)
 
     same_ids = []
     new_ids = []
     fixed_objs = []
+    moved = []
 
+    # --- 1. точный fingerprint ---
     all_fps = set(old_by_fp) | set(new_by_fp)
+    leftover_old = []
+    leftover_new = []
     for fp in all_fps:
         o = old_by_fp.get(fp, [])
         n = new_by_fp.get(fp, [])
         paired = min(len(o), len(n))
-        # first `paired` находок с каждой стороны = "same"
         for f in n[:paired]:
             same_ids.append(f["id"])
-        # "лишние" в новом = новые
         for f in n[paired:]:
-            new_ids.append(f["id"])
-        # "лишние" в старом = исчезли
+            leftover_new.append(f)
         for f in o[paired:]:
+            leftover_old.append(f)
+
+    # --- 2. soft-key matching для переместившихся ---
+    old_by_soft = {}
+    for f in leftover_old:
+        old_by_soft.setdefault(_soft_key(f), []).append(f)
+
+    used_old_ids = set()
+    for f in leftover_new:
+        k = _soft_key(f)
+        candidates = old_by_soft.get(k, [])
+        match = None
+        for c in candidates:
+            if c["id"] not in used_old_ids:
+                match = c
+                break
+        if match:
+            used_old_ids.add(match["id"])
+            moved.append({
+                "id": f["id"],
+                "old_id": match["id"],
+                "old_line": match.get("line", 0),
+                "new_line": f.get("line", 0),
+                "file": f.get("file", ""),
+                "title": f.get("title", ""),
+                "detector": f.get("detector", ""),
+                "severity": f.get("severity", ""),
+            })
+            same_ids.append(f["id"])
+        else:
+            new_ids.append(f["id"])
+
+    for f in leftover_old:
+        if f["id"] not in used_old_ids:
             fixed_objs.append(f)
 
     return {
@@ -65,12 +116,17 @@ def compare(old, new):
             "new": len(new_ids),
             "fixed": len(fixed_objs),
             "same": len(same_ids),
+            "moved": len(moved),
         },
         "new_ids": new_ids,
         "fixed_ids": [f["id"] for f in fixed_objs],
         "same_ids": same_ids,
+        "moved_ids": [m["id"] for m in moved],
+        "moved": moved,
         "fixed": fixed_objs,
     }
+
+
 
 
 def main():

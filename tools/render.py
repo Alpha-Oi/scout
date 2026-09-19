@@ -197,12 +197,16 @@ def main():
     diff = load_diff(scout_root)
     diff_status_by_id = {}
     if diff:
+        # moved перекрывает same — у переместившихся находок свой бейдж
+        for fid in diff.get("moved_ids", []):
+            diff_status_by_id[fid] = "moved"
         for fid in diff.get("new_ids", []):
             diff_status_by_id[fid] = "new"
         for fid in diff.get("fixed_ids", []):
             diff_status_by_id[fid] = "fixed"
         for fid in diff.get("same_ids", []):
-            diff_status_by_id[fid] = "same"
+            if fid not in diff_status_by_id:
+                diff_status_by_id[fid] = "same"
 
     meta = load_meta(run_dir)
     state = {

@@ -56,6 +56,7 @@
   .badge.count { background: #1a1a1a; color: #fff; font-weight: 600; }
   .badge.new { background: #2c7a4b; color: #fff; font-weight: 600; }
   .badge.fixed { background: #6b7280; color: #fff; font-weight: 600; }
+  .badge.moved { background: #d4a017; color: #fff; font-weight: 600; }
   .group .items { margin-top: 8px; max-height: 260px; overflow: auto; }
   .group-item { font-family: ui-monospace, monospace; font-size: 12px;
                 background: #f4f5f7; padding: 4px 8px; border-radius: 4px;
@@ -272,7 +273,8 @@ function applyFilters(items) {
 function badgesFor(x, extra) {
   const ds = x.diff_status;
   const dsBadge = ds === "new"   ? `<span class="badge new">NEW</span>` :
-                  ds === "fixed" ? `<span class="badge fixed">FIXED</span>` : "";
+                  ds === "fixed" ? `<span class="badge fixed">FIXED</span>` :
+                  ds === "moved" ? `<span class="badge moved">MOVED</span>` : "";
   return [
     dsBadge,
     `<span class="badge">${CAT_LABEL[x.category] || x.category}</span>`,
@@ -377,7 +379,9 @@ function renderDiff(list) {
   </div>`;
 
   let html = filterBar;
-  html += `<div class="diff-details">Сравнение: <b>${esc(oldName)}</b> → <b>${esc(newName)}</b> · было ${d.old_count}, стало ${d.new_count}</div>`;
+  const movedCount = (d.summary && d.summary.moved) || 0;
+  const movedNote = movedCount ? ` · переместилось ${movedCount}` : "";
+  html += `<div class="diff-details">Сравнение: <b>${esc(oldName)}</b> → <b>${esc(newName)}</b> · было ${d.old_count}, стало ${d.new_count}${movedNote}</div>`;
 
   const section = (title, cls, items, renderFn, kind) => {
     if (!items.length) return "";
