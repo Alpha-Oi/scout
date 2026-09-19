@@ -295,8 +295,9 @@ function renderGroups(list) {
     const openBtn = firstItem.file
       ? `<a class="btn-open" href="javascript:void(0)" onclick="openInVSCode(this, ${JSON.stringify(firstItem.file).replace(/"/g, "&quot;")}, ${firstItem.line || 0})">🔎 Первый файл</a>`
       : "";
-    return `<div class="group" data-sev="${esc(g.severity)}">
-      <h3>${esc(g.title)}</h3>
+    const _key = (g.key || g.code || g.title || "").toString();
+    return `<div class="group" data-sev="${esc(g.severity)}" data-key="${esc(_key)}">
+      <h3><span class="arrow">▾</span> ${esc(g.title)}</h3>
       ${prop}
       <div class="items">${itemsHtml}</div>
       <div class="badges">${badgesFor(g, [`<span class="badge count">×${g.count}</span>`])}</div>
@@ -534,5 +535,93 @@ function copyTask(btn, text) {
     }
   }
 </style>
+<!-- scout-groups-collapse -->
+<style>
+  .group h3 {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .group h3 .arrow {
+    display: inline-block;
+    width: 12px;
+    color: #888;
+    transition: transform 0.15s ease;
+    font-size: 11px;
+    line-height: 1;
+  }
+  .group.collapsed h3 .arrow {
+    transform: rotate(-90deg);
+  }
+  .group .items {
+    overflow: hidden;
+    max-height: 260px;
+    transition: max-height 0.2s ease;
+  }
+  .group.collapsed .items {
+    max-height: 0 !important;
+    margin-top: 0 !important;
+  }
+  @media (prefers-color-scheme: dark) {
+    .group h3 .arrow { color: #aaa; }
+  }
+</style>
+<script>
+(function () {
+  const KEY = "scout-collapsed-groups";
+  const list = document.getElementById("list");
+  if (!list) return;
+
+  function getSet() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(KEY) || "[]"));
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  function saveSet(s) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify([...s]));
+    } catch (e) { /* ignore */ }
+  }
+
+  function applyCollapsed() {
+    const s = getSet();
+    document.querySelectorAll(".group[data-key]").forEach(function (g) {
+      const key = g.getAttribute("data-key") || "";
+      if (s.has(key)) {
+        g.classList.add("collapsed");
+      } else {
+        g.classList.remove("collapsed");
+      }
+    });
+  }
+
+  list.addEventListener("click", function (e) {
+    const h3 = e.target.closest(".group > h3");
+    if (!h3) return;
+    const group = h3.parentElement;
+    if (!group || !group.classList.contains("group")) return;
+    group.classList.toggle("collapsed");
+    const key = group.getAttribute("data-key") || "";
+    const s = getSet();
+    if (group.classList.contains("collapsed")) s.add(key);
+    else s.delete(key);
+    saveSet(s);
+  });
+
+  // перехватываем rerender (mode switch, search, filter)
+  const obs = new MutationObserver(function () {
+    applyCollapsed();
+  });
+  obs.observe(list, { childList: true, subtree: true });
+
+  // первичное применение
+  applyCollapsed();
+})();
+</script>
 </body>
 </html>
