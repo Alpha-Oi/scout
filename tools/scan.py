@@ -923,6 +923,8 @@ def main(argv=None):
                         help="Каталог для отчётов (по умолчанию ./.scout)")
     parser.add_argument("--run-name", default=None,
                         help="Имя папки прогона (по умолчанию <дата>-<slug>)")
+    parser.add_argument("--quick", action="store_true",
+                        help="Пропустить медленные детекторы (pytest, pip-audit)")
     args = parser.parse_args(argv)
 
     project = Path(args.project).resolve()
