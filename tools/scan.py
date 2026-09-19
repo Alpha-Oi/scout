@@ -1023,7 +1023,7 @@ def slugify(name):
     return s or "project"
 
 
-def main(argv=None):
+def _parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project", help="Путь к проекту")
     parser.add_argument("--out", default=None,
@@ -1034,18 +1034,22 @@ def main(argv=None):
                         help="Пропустить медленные детекторы (pytest, pip-audit)")
     parser.add_argument("--max-findings", type=int, default=None,
                         help="Общий потолок находок (по умолчанию без лимита)")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
 
-    project = Path(args.project).resolve()
+
+def _resolve_project(path):
+    project = Path(path).resolve()
     if not project.is_dir():
         print(f"scout: не каталог: {project}", file=sys.stderr)
-        return 2
+        return None
+    return project
 
-    out_root = Path(args.out).resolve() if args.out else Path.cwd() / ".scout"
+
+def _resolve_run_dir(out_arg, run_name_arg, project):
+    out_root = Path(out_arg).resolve() if out_arg else Path.cwd() / ".scout"
     out_root.mkdir(parents=True, exist_ok=True)
-
     date = datetime.now().astimezone().strftime("%Y-%m-%d")
-    run_name = args.run_name or f"{date}-{slugify(project.name)}"
+    run_name = run_name_arg or f"{date}-{slugify(project.name)}"
     run_dir = out_root / run_name
     if run_dir.exists():
         i = 2
@@ -1053,96 +1057,134 @@ def main(argv=None):
             i += 1
         run_dir = out_root / f"{run_name}-{i}"
     run_dir.mkdir(parents=True)
+    return run_dir
 
+
+def _select_detectors(quick, config):
+    skip = {"pytest-failed", "pip-audit"} if quick else set()
+    skip_cfg = set(config.get("skip_detectors") or [])
+    active = [(n, f) for n, f in DETECTORS
+              if n not in skip and n not in skip_cfg]
+    return active, skip_cfg
+
+
+def _announce_scan(project, active, quick, log, skip_cfg):
+    log.write("scout scan\n")
+    log.write(f"project: {project}\n")
+    log.write(f"time:    {datetime.now(timezone.utc).isoformat(timespec='seconds')}\n")
+    log.write(f"python:  {find_project_python(project)}\n")
+    if skip_cfg:
+        log.write(f"skipped by .scoutrc: {sorted(skip_cfg)}\n")
+    total = len(active)
+    print(f"\nscout: scanning {project}\n")
+    print(f"       detectors: {total}" + ("  (--quick)" if quick else ""))
+    print()
+
+
+def _run_all_detectors(active, project, log, config):
     findings = []
-    t_start = time.monotonic()
-    with open(run_dir / "scan.log", "w", encoding="utf-8") as log:
-        log.write("scout scan\n")
-        log.write(f"project: {project}\n")
-        log.write(f"time:    {datetime.now(timezone.utc).isoformat(timespec='seconds')}\n")
-        log.write(f"python:  {find_project_python(project)}\n")
+    total = len(active)
+    for idx, (name, fn) in enumerate(active, 1):
+        findings += run_detector(name, fn, project, log, idx, total, config)
+    print()
+    return findings
 
-        skip = {"pytest-failed", "pip-audit"} if args.quick else set()
-        config = load_scoutrc(project)
-        skip_cfg = set(config.get("skip_detectors") or [])
-        active = [(n, f) for n, f in DETECTORS
-                  if n not in skip and n not in skip_cfg]
-        if skip_cfg:
-            log.write(f"skipped by .scoutrc: {sorted(skip_cfg)}\n")
-        total = len(active)
-        print(f"\nscout: scanning {project}\n")
-        print(f"       detectors: {total}"
-              + ("  (--quick)" if args.quick else ""))
-        print()
-        for idx, (name, fn) in enumerate(active, 1):
-            findings += run_detector(name, fn, project, log, idx, total, config)
-        print()
 
+def _apply_severity_rules(findings, config):
     sev_rules = config.get("severity_rules") or {}
-    if sev_rules:
-        for f in findings:
-            if f["detector"] in sev_rules:
-                f["severity"] = sev_rules[f["detector"]]
+    if not sev_rules:
+        return findings
+    for f in findings:
+        if f["detector"] in sev_rules:
+            f["severity"] = sev_rules[f["detector"]]
+    return findings
 
+
+def _apply_per_detector_caps(findings, config):
     caps = config.get("max_findings_per_detector") or {}
-    if caps:
-        by_det = {}
-        kept = []
-        for f in findings:
-            d = f["detector"]
-            cap = caps.get(d)
-            if cap is None:
-                kept.append(f)
-                continue
-            by_det.setdefault(d, 0)
-            if by_det[d] < int(cap):
-                kept.append(f)
-                by_det[d] += 1
-        findings = kept
+    if not caps:
+        return findings
+    by_det = {}
+    kept = []
+    for f in findings:
+        d = f["detector"]
+        cap = caps.get(d)
+        if cap is None:
+            kept.append(f)
+            continue
+        by_det.setdefault(d, 0)
+        if by_det[d] < int(cap):
+            kept.append(f)
+            by_det[d] += 1
+    return kept
 
+
+def _sort_findings(findings):
     findings.sort(key=lambda f: (
         SEVERITY_ORDER.get(f["severity"], 9),
         f["category"],
         f["file"],
         f["line"],
     ))
+    return findings
 
-    cap = args.max_findings
-    if cap is None:
-        cap = config.get("max_findings")
-    if cap is not None and len(findings) > cap:
-        # Не даём одному детектору занять больше половины бюджета.
-        per_det_cap = max(cap // 2, 20)
-        counts = {}
-        kept = []
-        for f in findings:
-            d = f["detector"]
-            if counts.get(d, 0) >= per_det_cap:
-                continue
-            kept.append(f)
-            counts[d] = counts.get(d, 0) + 1
-            if len(kept) >= cap:
-                break
-        dropped = len(findings) - len(kept)
-        print(f"scout: capped at {cap} findings (dropped {dropped}, "
-              f"per-detector max {per_det_cap})")
-        findings = kept
 
+def _apply_max_findings(findings, cli_cap, config):
+    cap = cli_cap if cli_cap is not None else config.get("max_findings")
+    if cap is None or len(findings) <= cap:
+        return findings
+    per_det_cap = max(cap // 2, 20)
+    counts = {}
+    kept = []
+    for f in findings:
+        d = f["detector"]
+        if counts.get(d, 0) >= per_det_cap:
+            continue
+        kept.append(f)
+        counts[d] = counts.get(d, 0) + 1
+        if len(kept) >= cap:
+            break
+    dropped = len(findings) - len(kept)
+    print(f"scout: capped at {cap} findings (dropped {dropped}, "
+          f"per-detector max {per_det_cap})")
+    return kept
+
+
+def _write_findings(run_dir, findings):
     (run_dir / "findings.json").write_text(
         json.dumps(findings, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
+
+def _print_summary(findings, run_dir, elapsed):
     counts = {}
     for f in findings:
         counts[f["severity"]] = counts.get(f["severity"], 0) + 1
-
-    total_elapsed = time.monotonic() - t_start
-    print(f"scout: {len(findings)} findings → {run_dir}  ({total_elapsed:.1f}s)")
+    print(f"scout: {len(findings)} findings \u2192 {run_dir}  ({elapsed:.1f}s)")
     for sev in ("critical", "high", "medium", "low"):
         if counts.get(sev):
             print(f"  {sev:<8} {counts[sev]}")
 
+
+def main(argv=None):
+    args = _parse_args(argv)
+    project = _resolve_project(args.project)
+    if project is None:
+        return 2
+    run_dir = _resolve_run_dir(args.out, args.run_name, project)
+    config = load_scoutrc(project)
+    t_start = time.monotonic()
+    active, skip_cfg = _select_detectors(args.quick, config)
+    with open(run_dir / "scan.log", "w", encoding="utf-8") as log:
+        _announce_scan(project, active, args.quick, log, skip_cfg)
+        findings = _run_all_detectors(active, project, log, config)
+    findings = _apply_severity_rules(findings, config)
+    findings = _apply_per_detector_caps(findings, config)
+    findings = _sort_findings(findings)
+    findings = _apply_max_findings(findings, args.max_findings, config)
+    _write_findings(run_dir, findings)
+    _print_summary(findings, run_dir, time.monotonic() - t_start)
     return 0
 
 
