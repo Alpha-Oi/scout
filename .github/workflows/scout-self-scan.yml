@@ -10,6 +10,7 @@ on:
       - "tools/**"
       - "phases/**"
       - "SKILL.md"
+      - ".github/workflows/**"
 
 jobs:
   scan:
@@ -42,4 +43,5 @@ jobs:
           name: scout-report
           path: reports/
           retention-days: 30
+
 
