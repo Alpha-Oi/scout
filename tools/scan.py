@@ -543,7 +543,9 @@ def detect_radon(project, log):
         log.write("  radon not installed — skip\n")
         return []
 
-    cmd = base + ["cc", "-s", "-j", str(project)]
+    excl = ("*/node_modules/*,*/venv/*,*/.venv/*,*/.git/*,"
+            "*/dist/*,*/build/*,*/.tox/*,*/__pycache__/*")
+    cmd = base + ["cc", "-s", "-j", "-e", excl, str(project)]
     r = run(cmd, project, log, timeout=180)
     if r is None or not r.stdout:
         return []
@@ -914,6 +916,7 @@ def detect_detect_secrets(project, log):
         r"(?:^|[/\\])("
         r"\.venv|venv|node_modules|\.git|__pycache__|\.tox|dist|build|"
         r"\.mypy_cache|\.pytest_cache|\.ruff_cache|"
+        r"\.github[/\\]workflows|"
         r"chrome_profile|CachedData|Code Cache|GPUCache|"
         r"Cache|Cookies|History|Web Data|Local State|Preferences|"
         r"TransportSecurity|BrowsingTopicsState|leveldb"
