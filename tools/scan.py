@@ -938,7 +938,8 @@ def detect_detect_secrets(project, log):
             stype = it.get("type", "Secret")
             findings.append(make_finding(
                 category="vuln",
-                severity="critical" if it.get("is_verified") else "high",
+                severity=("critical" if it.get("is_verified")
+                          else ("medium" if stype == "Secret Keyword" else "high")),
                 title=f"{stype} в {fname}:{line}",
                 file=_rel(project, fname),
                 line=line,
