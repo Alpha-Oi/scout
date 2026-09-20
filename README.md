@@ -36,8 +36,7 @@ After that in any project: /scout <path-to-project>
 
     git clone https://github.com/Alpha-Oi/scout.git
     cd scout
-    python -m pip install pytest pip-audit bandit ruff mypy vulture radon interrogate detect-secrets semgrep uv
-    python -m uv tool install pyscn
+    python tools/doctor.py
 
 Missing tools are skipped, not faked. Scout works with whatever is installed.
 
