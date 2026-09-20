@@ -33,7 +33,7 @@ from pathlib import Path
 EXCLUDE_DIRS = {
     ".git", ".hg", ".svn",
     "node_modules", ".venv", "venv", "env", ".tox",
-    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".pyscn",
     ".scout", ".autopilot",
     "dist", "build", ".next", ".nuxt", "target", "out",
     "coverage", "htmlcov", ".idea", ".vscode",

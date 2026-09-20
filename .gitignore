@@ -23,3 +23,5 @@ Thumbs.db
 venv/
 .scout-llm-cache.json
 .scoutrc
+
+.pyscn/
