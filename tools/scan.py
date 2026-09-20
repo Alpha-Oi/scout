@@ -915,7 +915,7 @@ def detect_detect_secrets(project, log):
     SKIP_RE = re.compile(
         r"(?:^|[/\\])("
         r"\.venv|venv|node_modules|\.git|__pycache__|\.tox|dist|build|"
-        r"\.mypy_cache|\.pytest_cache|\.ruff_cache|"
+        r"\.mypy_cache|\.pytest_cache|\.ruff_cache|\.pyscn|"
         r"\.github[/\\]workflows|"
         r"chrome_profile|CachedData|Code Cache|GPUCache|"
         r"Cache|Cookies|History|Web Data|Local State|Preferences|"
@@ -1238,3 +1238,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
