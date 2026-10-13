@@ -136,7 +136,7 @@ def main():
         for p in json.loads(p_file.read_text(encoding="utf-8")):
             proposals[p["id"]] = p
 
-    thresh = -1 if args.severity == "all" else SEV_ORDER[args.severity]
+    thresh = max(SEV_ORDER.values()) if args.severity == "all" else SEV_ORDER[args.severity]
     verify = default_verify(project)
 
     selected = []
