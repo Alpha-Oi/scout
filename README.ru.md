@@ -189,12 +189,14 @@ scout/
   tools/                рантайм: scout (одна команда), scan, propose, diff, render, sync, queue, doctor
   scripts/              verify-skill.py, build-adapters.py
   examples/demo.py      демо одной командой
+  tests/                тесты на unittest (только stdlib), запускаются в CI
   docs/                 руководство, примеры, настройка, детекторы, FAQ
   AGENTS.md / CLAUDE.md / .cursor/rules/   адаптеры для Codex / Claude Code / Cursor
   .scoutrc.example      шаблон конфигурации
 ```
 
 Проверка целостности: `python scripts/verify-skill.py` → `scout check: OK`.
+Тесты (только stdlib, ничего ставить не нужно): `python -m unittest discover -s tests`.
 
 ## Лицензия
 

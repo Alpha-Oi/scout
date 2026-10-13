@@ -174,12 +174,14 @@ scout/
   tools/                runtime: scout (one command), scan, propose, diff, render, sync, queue, doctor
   scripts/              verify-skill.py, build-adapters.py
   examples/demo.py      one-command demo
+  tests/                unittest suite (stdlib only), run in CI
   docs/                 guide, examples, configuration, detectors, troubleshooting
   AGENTS.md / CLAUDE.md / .cursor/rules/   adapters for Codex / Claude Code / Cursor
   .scoutrc.example      config template
 ```
 
 Integrity check: `python scripts/verify-skill.py` → `scout check: OK`.
+Tests (stdlib only, no extra packages): `python -m unittest discover -s tests`.
 
 ## License
 

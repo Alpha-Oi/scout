@@ -20,6 +20,9 @@ jobs:
       - name: Verify skill integrity
         run: python scripts/verify-skill.py
 
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
       - name: Check Python syntax of tools
         run: |
           python -m compileall -q tools scripts
