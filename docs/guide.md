@@ -181,7 +181,7 @@ python tools/sync.py    ./reports
 Реальный вывод (из `python examples/demo.py`):
 
 ```
-diff: new=1 fixed=4 same=0 -> reports/diff.json
+diff: new=1 fixed=8 same=1 -> reports/diff.json
 ```
 
 Сопоставление идёт по `fingerprint` (`детектор:файл:строка:заголовок`), поэтому

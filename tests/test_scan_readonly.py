@@ -116,8 +116,12 @@ class ScoutOneCommandTest(unittest.TestCase):
             second = run_tool("scout.py", proj, "--out", out, "--quick", "--no-open", env=env)
             self.assertEqual(second.returncode, 0, second.stderr)
             diff = json.loads((out / "diff.json").read_text("utf-8"))
-            self.assertEqual(diff["summary"]["fixed"], 1)
-            self.assertGreaterEqual(diff["summary"]["same"], 1)
+            # Сколько всего исправлено, зависит от установленных детекторов
+            # (например, interrogate тоже перестаёт ругаться): проверяем смысл.
+            fixed = {f["detector"] for f in diff["fixed"]}
+            self.assertIn("todo-fixme", fixed)
+            self.assertGreaterEqual(diff["summary"]["same"], 1)  # секрет остался
+            self.assertNotIn("secrets", fixed)
 
             html = (out / "dashboard.html").read_text("utf-8")
             self.assertIn("window.STATE=", html)
@@ -134,6 +138,8 @@ class ScoutOneCommandTest(unittest.TestCase):
 
             b = tmp / "other"
             b.mkdir()
+            (b / ".scoutrc").write_text(
+                '{"skip_detectors": ["semgrep", "pyscn"]}', encoding="utf-8")
             (b / "x.py").write_text("x = 1\n", encoding="utf-8")
             r = run_tool("scout.py", b, "--out", out, "--quick", "--no-open", env=env)
             self.assertEqual(r.returncode, 0, r.stderr)

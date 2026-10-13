@@ -50,9 +50,11 @@ no server needed). Run it again after fixing things: it finds the previous run o
 same project by itself and fills the **Diff** tab. Real output:
 
 ```
-scout: 4 findings → .scout/2026-10-13-my-app  (2.1s)
+scout: 9 findings → .scout/2026-10-13-my-app  (3.6s)
   critical 1
-  low      3
+  high     1
+  medium   3
+  low      4
 
 Дашборд: .scout/dashboard.html
 ```
