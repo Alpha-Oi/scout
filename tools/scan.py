@@ -13,6 +13,9 @@
     <out>/<YYYY-MM-DD>-<slug>/findings.json   массив находок
     <out>/<YYYY-MM-DD>-<slug>/scan.log        что запускалось и что вернуло
     По умолчанию <out> = ./.scout (рядом с местом запуска, не в проекте).
+
+Кэши mypy, ruff и pytest и файлы .pyc уходят в <TMPDIR>/scout-cache
+(SCOUT_CACHE_DIR меняет корень), чтобы в проекте не появлялось лишних файлов.
 """
 
 import argparse
@@ -20,8 +23,10 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -112,6 +117,39 @@ def make_finding(category, severity, title, file, line, evidence, detector):
     }
 
 
+def tool_cache_dir(project):
+    """Каталог кэшей внешних инструментов вне проекта (и вне каталога отчётов).
+
+    Свой для каждого проекта, переживает прогоны: mypy и ruff быстрее со
+    вторым запуском. Переопределяется переменной SCOUT_CACHE_DIR.
+    """
+    root = os.environ.get("SCOUT_CACHE_DIR") or (
+        Path(tempfile.gettempdir()) / "scout-cache")
+    key = hashlib.sha1(str(project).encode("utf-8")).hexdigest()[:10]
+    return Path(root) / key
+
+
+def tool_env(project):
+    """Окружение для детекторов: кэши и байт-код не попадают в проект.
+
+    mypy, ruff и pytest по умолчанию кладут .mypy_cache, .ruff_cache,
+    .pytest_cache и __pycache__ рядом с кодом. Здесь они переезжают в
+    tool_cache_dir(), а запись .pyc отключена.
+    """
+    cache = tool_cache_dir(project)
+    addopts = " ".join(filter(None, [
+        os.environ.get("PYTEST_ADDOPTS", ""),
+        "-o " + shlex.quote("cache_dir=" + (cache / "pytest").as_posix()),
+    ]))
+    return {
+        **os.environ,
+        "MYPY_CACHE_DIR": str(cache / "mypy"),
+        "RUFF_CACHE_DIR": str(cache / "ruff"),
+        "PYTEST_ADDOPTS": addopts,
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+
+
 def run(cmd, cwd, log, timeout=180):
     """Запустить подпроцесс. Возвращает CompletedProcess или None."""
     log.write(f"$ {' '.join(str(c) for c in cmd)}\n  cwd={cwd}\n")
@@ -122,6 +160,7 @@ def run(cmd, cwd, log, timeout=180):
             encoding="utf-8", errors="replace",
             timeout=timeout,
             check=False,
+            env=tool_env(cwd),
         )
         log.write(f"  exit={r.returncode}\n")
         if r.stderr:

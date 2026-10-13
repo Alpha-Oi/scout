@@ -70,3 +70,4 @@ cp /path/to/scout/.scoutrc.example ~/projects/my-app/.scoutrc
 | Очередь задач | `--queue DIR` у `queue.py` (по умолчанию `./.scout-queue`) |
 | LLM-провайдер | переменные окружения `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` или локальный Ollama |
 | Кэш LLM | `.scout-llm-cache.json` в текущем каталоге |
+| Кэши `mypy` / `ruff` / `pytest` | `SCOUT_CACHE_DIR` (по умолчанию `<TMPDIR>/scout-cache`); вне проекта, удалять безопасно |
