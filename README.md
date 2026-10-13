@@ -76,8 +76,9 @@ See the [guide](docs/guide.md#6-работа-через-claude-code--cursor--cod
 ## What you need to know
 
 - **Read-only.** Scout never writes into the scanned project; reports go to `--out` (default `./.scout`).
-  Two caveats: external detectors run inside the project and may leave their own caches
-  (`.mypy_cache`, `.ruff_cache`), and `pytest-failed` **runs your project's tests**
+  Tool caches (`mypy`, `ruff`, `pytest`) and `.pyc` files are redirected to a temp folder
+  (`$TMPDIR/scout-cache`, override with `SCOUT_CACHE_DIR`). One caveat: `pytest-failed`
+  **runs your project's tests**, so whatever those tests write is outside Scout's control
   (skip it with `--quick` for code you don't trust).
 - **Missing tool = skipped detector.** Nothing is faked. With no extra tools installed you still get
   the two built-in detectors (`secrets`, `todo-fixme`).
