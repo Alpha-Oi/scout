@@ -46,6 +46,9 @@ class InstalledCopyTest(unittest.TestCase):
                     shutil.copy(src, skill / name)
             shutil.copy(ROOT / "tools" / "dashboard.html", skill / "tools" / "dashboard.html")
             (tmp / "userproj" / "a.py").write_text(f"# {TODO}: x\n", encoding="utf-8")
+            # Медленные сетевые детекторы тесту не нужны.
+            (tmp / "userproj" / ".scoutrc").write_text(
+                '{"skip_detectors": ["semgrep", "pyscn"]}', encoding="utf-8")
 
             env = {**os.environ, "SCOUT_CACHE_DIR": str(tmp / "cache")}
             check = subprocess.run(

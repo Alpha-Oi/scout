@@ -47,9 +47,11 @@ python tools/scout.py ~/projects/my-app   # скан, предложения, di
 прогон этого проекта и заполнит вкладку **Diff**. Реальный вывод:
 
 ```
-scout: 4 findings → .scout/2026-10-13-my-app  (2.1s)
+scout: 9 findings → .scout/2026-10-13-my-app  (3.6s)
   critical 1
-  low      3
+  high     1
+  medium   3
+  low      4
 
 Дашборд: .scout/dashboard.html
 ```

@@ -28,37 +28,48 @@ def load(expr):
     return eval(expr)              # <- eval пользовательского ввода
 ```
 
-Результат скана (только `ruff` + встроенные детекторы, остальные не установлены):
+Результат скана (12 детекторов: все, кроме `semgrep` и медленных `pytest-failed` и
+`pip-audit`, которые пропускает `--quick`; путь к папке прогона сокращён):
 
 ```
-scout: 4 findings → reports/run-1  (2.1s)
+scout: 9 findings → reports/run-1  (3.6s)
   critical 1
-  low      3
+  high     1
+  medium   3
+  low      4
 ```
 
-| Severity | Детектор | Где | Предложение Scout |
+| Severity | Детектор | Где | Предложение Scout (сокращённо) |
 |---|---|---|---|
-| critical | `secrets` | `app.py:4` | Проверить: если это секрет, перенести в `.env`, добавить `.env` в `.gitignore`, ротировать ключ |
-| low | `ruff` | `app.py:1` | F401 (неиспользуемый импорт): `ruff check --fix`, затем проверить diff |
+| critical | `secrets` | `app.py:4` | Если это секрет: перенести в `.env`, добавить `.env` в `.gitignore`, ротировать ключ у провайдера |
+| high | `bandit` | `app.py:9` | `subprocess` с `shell=True` (B602): заменить на вызов без shell |
+| medium | `detect-secrets` | `app.py:4` | Тот же ключ, найденный по энтропии: ротировать, вынести в `.env` |
+| medium | `bandit` | `app.py:13` | `eval` (B307): заменить на `ast.literal_eval` |
+| medium | `interrogate` | `app.py` | Нет docstring (0%, 3 пропущено): добавить |
+| low | `ruff` | `app.py:1` | F401, неиспользуемый импорт: `ruff check --fix`, затем проверить diff |
+| low | `vulture` | `app.py:1` | Тот же `import os` как мёртвый код: проверить `grep`, удалить |
 | low | `ruff` | `app.py:9` | PLW1510: `subprocess.run` без `check` |
 | low | `todo-fixme` | `app.py:8` | Реализовать пометку или удалить |
 
-С установленным `bandit` добавятся ещё находки про `shell=True` и `eval`
-(`python tools/doctor.py` поставит недостающее).
+Обратите внимание: один и тот же ключ нашли два независимых детектора (`secrets` по
+шаблону имени, `detect-secrets` по энтропии), а `import os` увидели `ruff` и `vulture`.
+Это не ошибка: детекторы независимы, а дубли удобно отсеивать во вкладке «По коду».
 
 ## Пример 2. Было → стало (diff)
 
-После исправлений (ключ из окружения, `ast.literal_eval`, `check=True`):
+После исправлений (ключ из окружения, `ast.literal_eval`, `check=True`, без `shell=True`):
 
 ```
-scout: 1 findings → reports/run-2
+scout: 2 findings → reports/run-2  (2.1s)
+  medium   1
   low      1
 
-diff: new=1 fixed=4 same=0
+diff: new=1 fixed=8 same=1
 ```
 
-Исправлены четыре находки, появилась одна новая: оставленный `TODO: add timeout`.
-В дашборде на вкладке **Diff** они помечены как *fixed* и *new*.
+Исправлено восемь находок. Осталась одна старая (`interrogate`: docstring так и нет,
+в diff она «не изменилась») и появилась одна новая: оставленный `TODO: add timeout`.
+В дашборде на вкладке **Diff** они помечены как *fixed*, *same* и *new*.
 
 ## Рецепт: проверка перед релизом
 

@@ -802,34 +802,58 @@ def detect_pip_outdated(project, log):
 
 
 
+def _parse_interrogate_table(text):
+    """Строки сводной таблицы `interrogate -v` -> [(файл, всего, пропущено, %)].
+
+    У interrogate нет машинного вывода (флага --json не существует), поэтому
+    разбираем таблицу: | файл | всего | пропущено | покрыто | покрытие% |.
+    Имя берём как всё слева от последних четырёх колонок.
+    """
+    rows = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not (line.startswith("|") and line.endswith("|")):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 5:
+            continue
+        name = "|".join(cells[:-4])
+        total, missed, _covered, pct = cells[-4:]
+        if name in ("Name", "TOTAL") or not (total.isdigit() and missed.isdigit()):
+            continue
+        try:
+            rows.append((name, int(total), int(missed), float(pct.rstrip("%"))))
+        except ValueError:
+            continue
+    return rows
+
+
 def detect_interrogate(project, log):
-    """interrogate: доля docstrings. Из JSON берём файлы с покрытием < 80%."""
+    """interrogate: доля docstrings. Берём файлы с покрытием < 80%."""
     base = _tool_cmd("interrogate", "interrogate")
     if base is None:
         log.write("  interrogate not installed — skip\n")
         return []
-    cmd = base + ["--json", "-q", str(project)]
+    excludes = []
+    for d in sorted(EXCLUDE_DIRS):
+        if (project / d).is_dir():
+            excludes += ["-e", str(project / d)]
+    # -f 0: не падать по порогу; -I: пустые __init__.py не считаем нарушением.
+    cmd = base + ["-v", "--no-color", "-f", "0", "-I", *excludes, str(project)]
     r = run(cmd, project, log, timeout=120)
     if r is None or not r.stdout:
         return []
-    try:
-        data = json.loads(r.stdout)
-    except json.JSONDecodeError as e:
-        log.write(f"  json parse error: {e}\n")
-        return []
     findings = []
-    for fname, info in (data.get("files") or {}).items():
-        cov = info.get("total", info.get("coverage", 100))
+    for fname, total, missing, cov in _parse_interrogate_table(r.stdout):
         if cov >= 80:
             continue
-        missing = info.get("missing", info.get("missing_count", 0))
         findings.append(make_finding(
             category="improvement",
             severity="low" if cov >= 50 else "medium",
             title=f"документации: {cov:.0f}% ({missing} пропущено)",
             file=_rel(project, fname),
             line=0,
-            evidence=f"coverage={cov:.1f}% missing={missing}",
+            evidence=f"coverage={cov:.1f}% missing={missing} of {total}",
             detector="interrogate",
         ))
     log.write(f"  total: {len(findings)}\n")
@@ -907,6 +931,10 @@ def detect_semgrep(project, log):
                   "--no-git-ignore", str(project)]
     r = run(cmd, project, log, timeout=300)
     if r is None or not r.stdout:
+        # Типичная причина: --config auto скачивает правила с semgrep.dev и
+        # требует включённых метрик, без сети semgrep завершается с кодом 2.
+        log.write("  semgrep дал пустой результат: нужен доступ к semgrep.dev "
+                  "(--config auto), без него детектор пропущен\n")
         return []
     try:
         data = json.loads(r.stdout)

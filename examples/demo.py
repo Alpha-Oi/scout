@@ -9,6 +9,8 @@
   4. Считает diff между двумя прогонами и пересобирает дашборд.
 
 Свой проект и сам Scout не изменяются: всё пишется во временную папку.
+В учебном проекте отключён semgrep: он ходит на semgrep.dev за правилами,
+это долго и без сети не работает (в своих проектах он включён как обычно).
 
 Использование:
     python examples/demo.py            # весь цикл, путь к дашборду в конце
@@ -110,6 +112,7 @@ def main():
 
     print("== 1. Учебный проект с проблемами:", project)
     (project / "app.py").write_text(BAD_APP, encoding="utf-8")
+    (project / ".scoutrc").write_text('{"skip_detectors": ["semgrep"]}\n', encoding="utf-8")
 
     print("\n== 2. Первый скан")
     out = run_tool("scan.py", project, "--out", reports, "--quick", "--run-name", "run-1")
