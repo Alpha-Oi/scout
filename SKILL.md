@@ -28,6 +28,20 @@ Scout examines a project and reports. It never edits anything.
 - Invents findings. No detector - no finding.
 - Fixes anything. Fixing is a different skill.
 
+## Where the files are
+
+Paths such as tools/scan.py, phases/1-scan.md and scripts/verify-skill.py
+are relative to the directory that contains this SKILL.md (the skill
+directory), not to the current working directory. When the skill is
+installed into another project (for example .claude/skills/scout/), the
+working directory is that project, so run the tools by their full path:
+
+    python <skill dir>/tools/scan.py <project> --out <report_root>
+
+Take <skill dir> from where this file was loaded from. Reports still go
+to <report_root> (default ./.scout in the working directory), never into
+the scanned project.
+
 ## How to read this skill
 
 This file is the orchestrator. The rules for each phase live in phases/

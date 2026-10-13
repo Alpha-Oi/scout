@@ -71,7 +71,15 @@ and the [guide](docs/guide.md#2-первый-скан) shows the manual order.
 /scout quick ~/projects/my-app
 ```
 
-See the [guide](docs/guide.md#6-работа-через-claude-code--cursor--codex) for installing it as a skill.
+Install it as a skill (verified with `skills` 1.7.2):
+
+```sh
+cd ~/projects/my-app
+npx skills add Alpha-Oi/scout -a claude-code      # add -g to install for all projects
+```
+
+Details (what gets copied, paths, updating, telemetry opt-out):
+[guide](docs/guide.md#6-работа-через-claude-code--cursor--codex).
 
 ## What you need to know
 
