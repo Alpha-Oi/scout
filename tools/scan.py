@@ -125,7 +125,8 @@ def tool_cache_dir(project):
     """
     root = os.environ.get("SCOUT_CACHE_DIR") or (
         Path(tempfile.gettempdir()) / "scout-cache")
-    key = hashlib.sha1(str(project).encode("utf-8")).hexdigest()[:10]
+    key = hashlib.sha1(str(project).encode("utf-8"),
+                       usedforsecurity=False).hexdigest()[:10]
     return Path(root) / key
 
 
@@ -828,8 +829,20 @@ def _parse_interrogate_table(text):
     return rows
 
 
+def _is_test_path(rel):
+    """Файл тестов: tests/ и test/ на любом уровне, test_*.py, *_test.py, conftest.py.
+
+    docstring у тестовых функций обычно не нужен, поэтому interrogate их не считает.
+    """
+    p = Path(str(rel).replace("\\", "/"))
+    return (any(part in ("tests", "test") for part in p.parts[:-1])
+            or p.name == "conftest.py"
+            or p.name.startswith("test_")
+            or p.stem.endswith("_test"))
+
+
 def detect_interrogate(project, log):
-    """interrogate: доля docstrings. Берём файлы с покрытием < 80%."""
+    """interrogate: доля docstrings. Берём файлы с покрытием < 80%, кроме тестов."""
     base = _tool_cmd("interrogate", "interrogate")
     if base is None:
         log.write("  interrogate not installed — skip\n")
@@ -845,7 +858,7 @@ def detect_interrogate(project, log):
         return []
     findings = []
     for fname, total, missing, cov in _parse_interrogate_table(r.stdout):
-        if cov >= 80:
+        if cov >= 80 or _is_test_path(fname):
             continue
         findings.append(make_finding(
             category="improvement",

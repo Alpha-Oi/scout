@@ -40,5 +40,25 @@ class InterrogateParseTest(unittest.TestCase):
         self.assertEqual(scan._parse_interrogate_table(text), [("odd|name.py", 2, 2, 0.0)])
 
 
+class TestPathFilterTest(unittest.TestCase):
+    def test_test_files_are_recognised(self):
+        for rel in ("tests/test_a.py", "test/helper.py", "pkg/tests/util.py", "pkg/test_x.py",
+                    "pkg/x_test.py", "conftest.py", "pkg/conftest.py", "tests\\win.py"):
+            self.assertTrue(scan._is_test_path(rel), rel)
+
+    def test_regular_files_are_not(self):
+        for rel in ("app.py", "tools/scan.py", "pkg/contest.py", "latest.py", "testing_tools/a.py",
+                    "attest.py"):
+            self.assertFalse(scan._is_test_path(rel), rel)
+
+
+class CacheKeyTest(unittest.TestCase):
+    def test_cache_dir_is_stable_and_per_project(self):
+        from pathlib import Path
+        a, b = Path("/p/one"), Path("/p/two")
+        self.assertEqual(scan.tool_cache_dir(a), scan.tool_cache_dir(a))
+        self.assertNotEqual(scan.tool_cache_dir(a), scan.tool_cache_dir(b))
+
+
 if __name__ == "__main__":
     unittest.main()
