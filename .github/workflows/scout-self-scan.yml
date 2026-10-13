@@ -37,6 +37,12 @@ jobs:
       - name: Show summary
         run: python tools/summary.py >> $GITHUB_STEP_SUMMARY
 
+      - name: Show critical and high findings
+        run: |
+          python tools/summary.py --list critical high > "$RUNNER_TEMP/high.md"
+          cat "$RUNNER_TEMP/high.md"
+          cat "$RUNNER_TEMP/high.md" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload report
         uses: actions/upload-artifact@v4
         with:
