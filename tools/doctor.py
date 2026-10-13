@@ -7,7 +7,9 @@ import subprocess
 import sys
 
 DETECTORS = [
-    ("pytest-failed",  "pytest",         "pytest",         "pytest",         True),
+    # Детектор запускает `python -m pytest` тем же интерпретатором, поэтому
+    # pytest из PATH (например, uv tool) ему не подходит: проверяем только модуль.
+    ("pytest-failed",  None,             "pytest",         "pytest",         True),
     ("pip-audit",      "pip-audit",      "pip_audit",      "pip-audit",      True),
     ("pip-outdated",   None,             "pip",            None,             True),
     ("bandit",         "bandit",         "bandit",         "bandit",         True),

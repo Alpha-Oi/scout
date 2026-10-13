@@ -69,7 +69,15 @@ scout: 4 findings → .scout/2026-10-13-my-app  (2.1s)
 ```
 
 Или словами: «просканируй проект», «найди баги», «проверь проект на уязвимости».
-Установка скилла: [руководство, раздел 6](docs/guide.md#6-работа-через-claude-code--cursor--codex).
+Установка скилла (проверено с `skills` 1.7.2):
+
+```sh
+cd ~/projects/my-app
+npx skills add Alpha-Oi/scout -a claude-code      # с -g: для всех проектов
+```
+
+Подробности (что копируется, пути, обновление, отключение телеметрии):
+[руководство, раздел 6](docs/guide.md#6-работа-через-claude-code--cursor--codex).
 
 ## Что важно знать
 
@@ -189,12 +197,14 @@ scout/
   tools/                рантайм: scout (одна команда), scan, propose, diff, render, sync, queue, doctor
   scripts/              verify-skill.py, build-adapters.py
   examples/demo.py      демо одной командой
+  tests/                тесты на unittest (только stdlib), запускаются в CI
   docs/                 руководство, примеры, настройка, детекторы, FAQ
   AGENTS.md / CLAUDE.md / .cursor/rules/   адаптеры для Codex / Claude Code / Cursor
   .scoutrc.example      шаблон конфигурации
 ```
 
 Проверка целостности: `python scripts/verify-skill.py` → `scout check: OK`.
+Тесты (только stdlib, ничего ставить не нужно): `python -m unittest discover -s tests`.
 
 ## Лицензия
 
