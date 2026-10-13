@@ -39,25 +39,27 @@ TODO), сканирует его, «чинит», сканирует ещё ра
 python tools/doctor.py --check            # какие детекторы доступны
 python tools/doctor.py                    # (по желанию) поставить недостающие
 
-python tools/scan.py    ~/projects/my-app --out ./reports
-python tools/propose.py ./reports/<папка-прогона>   # имя папки печатает scan.py
-python tools/render.py  ./reports/<папка-прогона>
-cp tools/dashboard.html ./reports/                  # Windows: copy tools\dashboard.html reports\
-python tools/sync.py    ./reports
-
-# откройте reports/dashboard.html двойным щелчком (сервер не нужен)
+python tools/scout.py ~/projects/my-app   # скан, предложения, diff, дашборд, открыть
 ```
 
-Реальный вывод первой команды:
+Одна команда проходит весь конвейер и открывает `.scout/dashboard.html` (обычный файл,
+сервер не нужен). После исправлений запустите её снова: она сама найдёт прошлый
+прогон этого проекта и заполнит вкладку **Diff**. Реальный вывод:
 
 ```
-scout: 4 findings → reports/run-1  (2.1s)
+scout: 4 findings → .scout/2026-10-13-my-app  (2.1s)
   critical 1
   low      3
+
+Дашборд: .scout/dashboard.html
 ```
 
-`--quick` пропускает медленные детекторы (`pytest-failed`, `pip-audit`).
+Параметры: `--out DIR` (каталог отчётов, по умолчанию `./.scout`), `--quick` (пропустить
+медленные `pytest-failed` и `pip-audit`), `--max-findings N`, `--llm`, `--no-open`.
 На Linux/macOS, если нет `python`, используйте `python3`.
+
+Хотите по шагам? Отдельные инструменты перечислены в разделе [«Как это устроено»](#как-это-устроено),
+а ручной порядок описан в [руководстве](docs/guide.md#2-первый-скан).
 
 **Как скилл** в Claude Code, Cursor или Codex агент пройдёт все фазы сам:
 
@@ -111,6 +113,7 @@ flowchart LR
 
 | Команда | Назначение |
 |---|---|
+| `scout.py <проект>` | **всё перечисленное ниже за один запуск**, затем открывает дашборд |
 | `scan.py <проект> --out <каталог>` | запустить детекторы, записать `findings.json` и `scan.log` |
 | `propose.py <прогон>` | записать `proposals.json` (правила или `--llm`) |
 | `diff.py <старый> <новый>` | сравнить два прогона → `diff.json` (запускать **до** `render.py`) |
@@ -182,7 +185,7 @@ flowchart LR
 scout/
   SKILL.md              точка входа скилла (фазы, правила)
   phases/               правила фаз, читаются по одной
-  tools/                рантайм: scan, propose, diff, render, sync, queue, doctor
+  tools/                рантайм: scout (одна команда), scan, propose, diff, render, sync, queue, doctor
   scripts/              verify-skill.py, build-adapters.py
   examples/demo.py      демо одной командой
   docs/                 руководство, примеры, настройка, детекторы, FAQ

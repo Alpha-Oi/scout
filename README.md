@@ -42,25 +42,27 @@ with the before/after diff. Everything is written to a temp folder.
 python tools/doctor.py --check            # which detectors are available
 python tools/doctor.py                    # (optional) install the missing ones
 
-python tools/scan.py    ~/projects/my-app --out ./reports
-python tools/propose.py ./reports/<run-dir>        # run-dir is printed by scan.py
-python tools/render.py  ./reports/<run-dir>
-cp tools/dashboard.html ./reports/                 # Windows: copy tools\dashboard.html reports\
-python tools/sync.py    ./reports
-
-# open reports/dashboard.html (a plain file, no server needed)
+python tools/scout.py ~/projects/my-app   # scan, proposals, diff, dashboard, open
 ```
 
-Real output of the first command:
+One command runs the whole pipeline and opens `.scout/dashboard.html` (a plain file,
+no server needed). Run it again after fixing things: it finds the previous run of the
+same project by itself and fills the **Diff** tab. Real output:
 
 ```
-scout: 4 findings → reports/run-1  (2.1s)
+scout: 4 findings → .scout/2026-10-13-my-app  (2.1s)
   critical 1
   low      3
+
+Дашборд: .scout/dashboard.html
 ```
 
-Add `--quick` to skip the slow detectors (`pytest-failed`, `pip-audit`).
+Options: `--out DIR` (reports folder, default `./.scout`), `--quick` (skip the slow
+`pytest-failed` and `pip-audit`), `--max-findings N`, `--llm`, `--no-open`.
 On Linux/macOS use `python3` if `python` is not found.
+
+Prefer step by step? The individual tools are listed under [How it works](#how-it-works),
+and the [guide](docs/guide.md#2-первый-скан) shows the manual order.
 
 **As a skill** in Claude Code, Cursor or Codex, the agent runs all phases for you:
 
@@ -112,6 +114,7 @@ flowchart LR
 
 | Command | Purpose |
 |---|---|
+| `scout.py <project>` | **all of the below in one go**, then opens the dashboard |
 | `scan.py <project> --out <dir>` | run detectors, write `findings.json` and `scan.log` |
 | `propose.py <run>` | write `proposals.json` (rules, or `--llm`) |
 | `diff.py <old-run> <new-run>` | compare two runs → `diff.json` (run **before** `render.py`) |
@@ -167,7 +170,7 @@ The fingerprint is stable between runs; that is what makes the diff possible.
 scout/
   SKILL.md              skill entrypoint (phases, rules)
   phases/               per-phase rules, read one at a time
-  tools/                runtime: scan, propose, diff, render, sync, queue, doctor
+  tools/                runtime: scout (one command), scan, propose, diff, render, sync, queue, doctor
   scripts/              verify-skill.py, build-adapters.py
   examples/demo.py      one-command demo
   docs/                 guide, examples, configuration, detectors, troubleshooting
