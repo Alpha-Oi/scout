@@ -2,279 +2,147 @@
 
 # Scout
 
-
 [![CI](https://github.com/Alpha-Oi/scout/actions/workflows/verify.yml/badge.svg)](https://github.com/Alpha-Oi/scout/actions/workflows/verify.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Last commit](https://img.shields.io/github/last-commit/Alpha-Oi/scout)](https://github.com/Alpha-Oi/scout/commits/main)
 
-**Read-only project scanner with a dashboard.**  
-14 detectors. Bugs, vulnerabilities, dead code, style.  
-Finds, proposes, never edits. Works in Claude Code, Cursor, Codex, or plain CLI.
+**Read-only project scanner with a dashboard.**
+Runs up to 14 detectors (bugs, vulnerabilities, secrets, dead code, style), shows
+the findings in one HTML page and proposes one concrete action for each.
+It finds and proposes, it never edits your project.
 
-```
-scout: 23 findings -> reports/2026-09-19-gptmemoryengine
-  high     5     <- real bugs
-  medium   7
-  low      11
-```
+**English** · [Русский](README.ru.md)
 
-Then 5 tasks queued, fixed via `/scout-pick`, re-scan shows **6 findings, high 0**.
+<br clear="left" />
 
----
+![Scout dashboard](assets/dashboard.png)
 
-## Installation
-
-### As a skill (Claude Code, Cursor, Codex)
-
-    npx skills add Alpha-Oi/scout
-
-One command. Installs Scout into .claude/skills/scout/.
-After that in any project: /scout <path-to-project>
-
-### As a CLI
-
-    git clone https://github.com/Alpha-Oi/scout.git
-    cd scout
-    python tools/doctor.py
-
-Missing tools are skipped, not faked. Scout works with whatever is installed.
+*The dashboard UI and the proposals are in Russian; the data (files, lines, evidence) is language-neutral.*
 
 ---
-## Quick start
+
+## Try it in one minute
+
+No project of your own and no extra tools required, only Python 3.11+:
 
 ```sh
 git clone https://github.com/Alpha-Oi/scout.git
 cd scout
-
-python tools/scan.py <path-to-project> --out ./reports
-python tools/propose.py ./reports/<run-dir>
-python tools/render.py ./reports/<run-dir>
-python tools/sync.py ./reports
-
-# open reports/dashboard.html
+python examples/demo.py --open
 ```
 
-Or, in Claude Code / Cursor / Codex:
+The demo creates a tiny project with typical problems (a hard-coded key, `eval`,
+`shell=True`, a TODO), scans it, "fixes" it, re-scans, and opens the dashboard
+with the before/after diff. Everything is written to a temp folder.
+
+## Scan your own project
+
+```sh
+python tools/doctor.py --check            # which detectors are available
+python tools/doctor.py                    # (optional) install the missing ones
+
+python tools/scan.py    ~/projects/my-app --out ./reports
+python tools/propose.py ./reports/<run-dir>        # run-dir is printed by scan.py
+python tools/render.py  ./reports/<run-dir>
+cp tools/dashboard.html ./reports/                 # Windows: copy tools\dashboard.html reports\
+python tools/sync.py    ./reports
+
+# open reports/dashboard.html (a plain file, no server needed)
+```
+
+Real output of the first command:
 
 ```
-/scout <path-to-project>
+scout: 4 findings → reports/run-1  (2.1s)
+  critical 1
+  low      3
 ```
 
----
+Add `--quick` to skip the slow detectors (`pytest-failed`, `pip-audit`).
+On Linux/macOS use `python3` if `python` is not found.
+
+**As a skill** in Claude Code, Cursor or Codex, the agent runs all phases for you:
+
+```
+/scout ~/projects/my-app
+/scout quick ~/projects/my-app
+```
+
+See the [guide](docs/guide.md#6-работа-через-claude-code--cursor--codex) for installing it as a skill.
+
+## What you need to know
+
+- **Read-only.** Scout never writes into the scanned project; reports go to `--out` (default `./.scout`).
+  Two caveats: external detectors run inside the project and may leave their own caches
+  (`.mypy_cache`, `.ruff_cache`), and `pytest-failed` **runs your project's tests**
+  (skip it with `--quick` for code you don't trust).
+- **Missing tool = skipped detector.** Nothing is faked. With no extra tools installed you still get
+  the two built-in detectors (`secrets`, `todo-fixme`).
+- **Mostly for Python projects.** `secrets` and `todo-fixme` work on any text language, the rest are Python tools.
+- **Findings are signals.** Every finding carries file, line and raw detector output so you can check it.
+- **Deterministic.** The same findings give the same proposals. LLM proposals are opt-in (`--llm`).
+
+## Documentation
+
+Most of the documentation is in Russian.
+
+| Page | Contents |
+|---|---|
+| [Guide](docs/guide.md) | install, first scan, reading the dashboard, diff, task queue, skill mode, LLM |
+| [Examples](docs/examples.md) | before/after, recipes (CI, SARIF, quick scan), case study |
+| [Configuration](docs/configuration.md) | `.scoutrc`: every option with scenarios |
+| [Detectors](docs/detectors.md) | what each of the 14 detectors finds and what to do about it |
+| [Troubleshooting](docs/troubleshooting.md) | symptom → cause → fix |
+| [Case studies](docs/case-studies.md) | Scout scanning itself, what CI caught |
 
 ## How it works
 
 ```mermaid
 flowchart LR
     A[scan.py] --> B[propose.py]
-    B --> C[render.py]
-    C --> D[sync.py]
-    D --> E[dashboard.html]
-
-    A -.->|queue.py| F[.scout-queue/pending/]
-    F -->|/scout-pick| G[Claude Code]
-    G -->|fix + commit| H[done/]
-    H -.->|re-scan| A
-
-    style A fill:#e3f2fd
-    style E fill:#fff3e0
-    style H fill:#e8f5e9
+    B --> C[diff.py<br/>optional]
+    C --> D[render.py]
+    D --> E[sync.py]
+    E --> F[dashboard.html]
+    A -.->|queue.py| G[.scout-queue/pending/]
+    G -.->|fix by you or an agent| H[re-scan]
+    H -.-> A
 ```
 
-- **Read-only core.** `scan.py` never writes inside the scanned project.
-- **Opt-in fixer.** `.scout-queue/` + `/scout-pick` is a separate, safe workflow.
-- **Deterministic diff.** Same finding keeps same `fingerprint` between runs.
+| Command | Purpose |
+|---|---|
+| `scan.py <project> --out <dir>` | run detectors, write `findings.json` and `scan.log` |
+| `propose.py <run>` | write `proposals.json` (rules, or `--llm`) |
+| `diff.py <old-run> <new-run>` | compare two runs → `diff.json` (run **before** `render.py`) |
+| `render.py <run>` | build `state.js` from findings + proposals + diff |
+| `sync.py <dir>` | inline `state.js` into `dashboard.html` |
+| `queue.py <run>` | turn findings into task files in `.scout-queue/pending/` |
+| `doctor.py [--check] [--yes]` | check / install detector tools |
 
----
+`scan.py` flags: `--out`, `--run-name`, `--quick`, `--max-findings N`.
+`queue.py` flags: `--severity {critical,high,medium,low,all}`, `--detector`, `--limit`, `--dry`.
 
 ## Detectors
 
 | Detector | Category | What it finds | Requires |
 |---|---|---|---|
-| `pytest-failed` | bug | Failing tests | pytest |
-| `pip-audit` | vuln | Known CVEs in dependencies | pip-audit |
-| `pip-outdated` | improvement | Outdated deps (no CVE) | pip |
+| `pytest-failed` | bug | failing tests | pytest |
+| `pip-audit` | vuln | known CVEs in dependencies | pip-audit |
+| `pip-outdated` | improvement | outdated dependencies (no CVE) | pip |
 | `bandit` | vuln | eval, subprocess shell, weak crypto | bandit |
-| `ruff` | bug / improvement | Undefined names, unused imports, style | ruff |
-| `mypy` | bug | Type errors - None, attributes, arguments | mypy |
-| `vulture` | improvement | Dead code - unused functions, variables | vulture |
-| `radon` | improvement | Cyclomatic complexity > 10 | radon |
-| `interrogate` | improvement | Missing docstrings | interrogate |
-| `pyscn` | improvement | Code clones | uv |
+| `ruff` | bug / improvement | undefined names, unused imports, style | ruff |
+| `mypy` | bug | type errors | mypy |
+| `vulture` | improvement | dead code | vulture |
+| `radon` | improvement | cyclomatic complexity > 10 | radon |
+| `interrogate` | improvement | missing docstrings | interrogate |
+| `pyscn` | improvement | code clones | uv |
 | `semgrep` | vuln | SAST with curated rules | semgrep |
-| `detect-secrets` | vuln | Entropy-based secret detection | detect-secrets |
-| `todo-fixme` | incomplete | TODO / FIXME / XXX / HACK | (built-in) |
-| `secrets` | vuln | Regex API keys, tokens, passwords | (built-in) |
+| `detect-secrets` | vuln | entropy-based secrets | detect-secrets |
+| `todo-fixme` | incomplete | TODO / FIXME / XXX / HACK | built-in |
+| `secrets` | vuln | regex API keys, tokens, passwords | built-in |
 
-Missing tools are skipped, not faked. Each detector is independent.
-
----
-
-## Dashboard
-
-Single self-contained HTML. Opens as file, over HTTP, from a panel. No server needed.
-
-**Three views:**
-
-- **By findings** - flat list, sorted by severity
-- **By code** - grouped by rule code (`I001 x450` collapses 450 cards into 1)
-- **Diff** - new / fixed / moved / unchanged vs previous run
-
-**Per finding:**
-
-- Copy task - markdown prompt for Claude Code
-- Open in VS Code - `vscode://file/<abs-path>:<line>`
-- Evidence, proposal, risk, effort
-
-**Extras:**
-
-- Live search across file, title, detector, evidence
-- `/` focus search, `Esc` clear
-- SARIF export -> GitHub Code Scanning
-- Markdown export -> issue / PR / Slack
-- Collapsible groups (persisted in localStorage)
-
----
-
-## Case study - GPTMemoryEngine
-
-Real project (~200 lines of Python, RAG-memory engine).
-
-| Stage | critical | high | medium | low | **Total** |
-|---|---|---|---|---|---|
-| Initial scan | 0 | **5** | 7 | 11 | **23** |
-| After fixes | 0 | **0** | 2 | 4 | **6** |
-
-**What got fixed:**
-
-- `PyPDF2` CVE (PYSEC-2026-1835) -> migration to `pypdf` (one-line import change)
-- 7 mypy type errors -> 0 (open mode, bytes/str, annotations)
-- 4 ruff issues -> 0 (SIM115 x2, F841, BLE001)
-- 3 import-sort I001 -> 0
-
-**Method:** scan -> queue -> fix (manual or `/scout-pick`) -> re-scan -> diff.  
-**Result:** ruff and mypy clean, no CVEs, no high findings.
-
----
-
-## Self-scan
-
-Scout runs its own detectors on itself.
-
-```
-scout: 59 findings -> scout-reports/2026-09-19-scout-13
-  critical 0
-  high     0
-  medium   15
-  low      44
-```
-
-No critical or high findings. Ruff and mypy both clean. Max complexity in `scan.py`: 13 (was 32 before refactor).
-
----
-
-### CI caught what local scan missed
-
-The self-scan runs in GitHub Actions with a clean environment — no caches,
-fresh detector versions. This caught a bug that local scans never showed.
-
-`.pyscn/reports/analyze_*.json` — pyscn's own output from a previous run —
-was scanned by `detect-secrets`, which flagged 36 false positives. Locally
-`.pyscn/` was recreated on each run and never persisted; in CI it survived
-between steps.
-
-Fixed in two commits:
-
-- `ad5508f` — `.pyscn/` in `EXCLUDE_DIRS` (file iterator)
-- `5fc0098` — `.pyscn/` in `SKIP_RE` inside `detect_detect_secrets`
-  (that detector runs its own walk via the external tool)
-
-Only the second fix worked — `detect-secrets` has its own file traversal
-separate from the shared iterator.
-
----
-## Queue + /scout-pick
-
-Scout can write every finding to `.scout-queue/pending/` as a task file. A Fixer (Claude Code, Cursor, or manual) picks one, fixes, verifies, commits.
-
-```sh
-# Generate tasks from a run
-python tools/queue.py <run-dir> --severity high --detector ruff
-```
-
-In Claude Code, in the target project:
-
-```
-/scout-pick
-```
-
-Takes the oldest task, shows it, waits for confirmation (unless `--yes`), applies minimal fix, runs verify commands, commits. If verify fails - `git restore` and move to `rejected/`.
-
-**Hard rules:** one task per invocation, only touched files, no `git push`.
-
----
-
-## LLM proposals (optional)
-
-Off by default. Enable with `--llm`. Provider auto-detected:
-
-| Provider | Trigger | Speed |
-|---|---|---|
-| Anthropic | `ANTHROPIC_API_KEY` set | fast, paid |
-| OpenAI | `OPENAI_API_KEY` set | fast, paid |
-| Ollama | `127.0.0.1:11434` answers | local, free |
-
-```sh
-python tools/propose.py <run-dir> --llm --llm-max 20
-```
-
-Responses cached in `.scout-llm-cache.json` keyed by fingerprint.
-
----
-
-## Configuration - .scoutrc
-
-Optional. Drop in project root.
-
-```json
-{
-  "skip_detectors": ["pyscn", "semgrep"],
-  "severity_rules": {
-    "todo-fixme": "low",
-    "interrogate": "low"
-  },
-  "max_findings": 500,
-  "max_findings_per_detector": {
-    "pip-outdated": 20,
-    "ruff": 200
-  },
-  "bandit_skip": ["B105", "B404", "B603", "B607", "B311"]
-}
-```
-
-See `.scoutrc.example` for defaults.
-
----
-
-## CLI reference
-
-| Command | Purpose |
-|---|---|
-| `python tools/scan.py <path> --out <dir>` | Run detectors, write findings.json |
-| `python tools/propose.py <run>` | Write proposals.json (rules or `--llm`) |
-| `python tools/render.py <run>` | Build state.js from findings + proposals + diff |
-| `python tools/sync.py <dir>` | Inline state into dashboard.html |
-| `python tools/diff.py <old> <new>` | Compare two runs -> diff.json |
-| `python tools/queue.py <run>` | Write tasks to .scout-queue/pending/ |
-
-**Flags:** `--quick` (skip slow detectors), `--llm`, `--max-findings N`, `--dry`.
-
----
-
-## Detector contract
-
-Every finding is JSON:
+## Finding format
 
 ```json
 {
@@ -287,41 +155,27 @@ Every finding is JSON:
   "evidence": "raw detector output",
   "detector": "name",
   "detected_at": "ISO-8601",
-  "fingerprint": "stable across runs"
+  "fingerprint": "detector:file:line:title"
 }
 ```
 
-`fingerprint` = `detector:file:line:title`. Same issue keeps same fingerprint between runs, which is what makes diff possible.
+The fingerprint is stable between runs; that is what makes the diff possible.
 
----
-
-## Rules
-
-1. **Read-only.** No file inside the scanned project is written by scan.py.
-2. **Evidence or silence.** Every finding carries file, line, and detector output.
-3. **One proposal per finding.** Concrete action, not "improve security".
-4. **Deterministic by default.** Same findings -> same proposals. LLM is opt-in.
-5. **Missing tool, missing detector.** Nothing is faked.
-
----
-
-## Layout
+## Repository layout
 
 ```
 scout/
   SKILL.md              skill entrypoint (phases, rules)
   phases/               per-phase rules, read one at a time
-  tools/                runtime - scan, propose, render, sync, diff, queue
+  tools/                runtime: scan, propose, diff, render, sync, queue, doctor
   scripts/              verify-skill.py, build-adapters.py
-  AGENTS.md             adapter for Codex
-  CLAUDE.md             adapter for Claude Code
-  .cursor/rules/        adapter for Cursor
-  .github/workflows/    CI: verify-skill on every push
+  examples/demo.py      one-command demo
+  docs/                 guide, examples, configuration, detectors, troubleshooting
+  AGENTS.md / CLAUDE.md / .cursor/rules/   adapters for Codex / Claude Code / Cursor
   .scoutrc.example      config template
-  LICENSE               MIT
 ```
 
----
+Integrity check: `python scripts/verify-skill.py` → `scout check: OK`.
 
 ## License
 
