@@ -9,7 +9,7 @@ from pathlib import Path
 
 from _helpers import TOOLS, make_finding, temp_dir
 
-SECRET_EVIDENCE = "API_KEY = [REDACTED] and raw tool output that must not be printed"
+SECRET_EVIDENCE = "API_KEY = [REDACTED] and raw tool output that must not be printed"  # pragma: allowlist secret
 
 
 def run_summary(cwd, *args):

@@ -30,7 +30,7 @@ TOOLS = ROOT / "tools"
 
 # Ключ собран из частей: иначе сам Scout находил бы "секрет" в этом файле
 # при самосканировании репозитория.
-FAKE_KEY = "sk-live-" + "9f8a7b6c5d4e3f2a" + "1b0c9d8e7f6a5b4c"
+FAKE_KEY = "sk-live-" + "9f8a7b6c5d4e3f2a" + "1b0c9d8e7f6a5b4c"  # pragma: allowlist secret
 
 TODO = "TO" + "DO"  # то же самое: чтобы маркер не попал в самоскан
 
