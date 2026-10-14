@@ -10,7 +10,7 @@ TOOLS = ROOT / "tools"
 
 # Маркеры собраны из частей: иначе самоскан Scout находил бы их в тестах.
 TODO = "TO" + "DO"
-FAKE_KEY_LINE = "API_KEY" + ' = "' + "sk-live-" + "0123456789abcdef0123" + '"'
+FAKE_KEY_LINE = "API_KEY" + ' = "' + "sk-live-" + "0123456789abcdef0123" + '"'  # pragma: allowlist secret
 
 
 def load_tool(name):
