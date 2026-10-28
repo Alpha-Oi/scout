@@ -18,6 +18,8 @@ It finds and proposes, it never edits your project.
 
 ![Scout dashboard](assets/dashboard.png)
 
+![Scout overview: architecture, detectors, pipeline and design principles](assets/scout-overview.png)
+
 *The dashboard UI and the proposals are in Russian; the data (files, lines, evidence) is language-neutral.*
 
 ---
